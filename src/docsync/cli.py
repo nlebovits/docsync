@@ -275,7 +275,6 @@ doc_paths = ["docs/**/*.md", "README.md"]
     print("  1. Run 'docsync bootstrap' to auto-generate links")
     print("  2. Edit .docsync/links.toml to customize links")
     print("  3. Run 'docsync check' to verify setup")
-    print("  4. Install pre-commit hook: 'docsync install-hook'")
 
     return 0
 
@@ -796,36 +795,6 @@ def cmd_clear_cache(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_install_hook(args: argparse.Namespace) -> int:
-    """Install pre-commit hook."""
-    repo_root = Path.cwd()
-    hooks_dir = repo_root / ".git" / "hooks"
-
-    if not hooks_dir.exists():
-        print("⚠️  Not in a git repository")
-        return 1
-
-    hook_path = hooks_dir / "pre-commit"
-    hook_content = """#!/bin/bash
-# docsync pre-commit hook
-
-docsync check
-exit $?
-"""
-
-    if hook_path.exists():
-        print("⚠️  pre-commit hook already exists")
-        print(f"Add this line to {hook_path}:")
-        print("  docsync check")
-        return 1
-
-    hook_path.write_text(hook_content)
-    hook_path.chmod(0o755)
-    print(f"✓ Installed pre-commit hook at {hook_path}")
-
-    return 0
-
-
 def cmd_check_protected(args: argparse.Namespace) -> int:
     """Check for violations in staged files."""
     import subprocess
@@ -1051,9 +1020,6 @@ def main() -> int:
     # clear-cache
     subparsers.add_parser("clear-cache", help="Clear import graph cache")
 
-    # install-hook
-    subparsers.add_parser("install-hook", help="Install git pre-commit hook")
-
     # check-protected
     subparsers.add_parser("check-protected", help="Check staged files for protection violations")
 
@@ -1087,7 +1053,6 @@ def main() -> int:
         "coverage": cmd_coverage,
         "info": cmd_info,
         "clear-cache": cmd_clear_cache,
-        "install-hook": cmd_install_hook,
         "check-protected": cmd_check_protected,
         "list-protected": cmd_list_protected,
         "skills": cmd_skills,

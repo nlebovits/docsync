@@ -28,22 +28,7 @@ docsync init
 
 ---
 
-### install-hook
 
-Install the pre-commit hook.
-
-```bash
-docsync install-hook
-```
-
-**Effect:**
-
-- Creates `.git/hooks/pre-commit` script
-- Hook runs `docsync check` before each commit
-
-**When to use:** After `docsync init` to enable enforcement.
-
----
 
 ### bootstrap
 
