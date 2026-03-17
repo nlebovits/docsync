@@ -1,7 +1,7 @@
 [project]
 name = "docsync"
-version = "0.1.0"
-description = "Pre-commit hook enforcing documentation freshness via code-doc dependency graphs"
+version = "0.2.0"
+description = "Keep code and documentation in sync with centralized linking and section-aware staleness detection"
 requires-python = ">=3.11"
 license = "MIT"
 readme = "README.md"
