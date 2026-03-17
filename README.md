@@ -36,7 +36,19 @@ docsync validate-links
 docsync coverage
 
 # Enable pre-commit enforcement
-docsync install-hook
+pip install pre-commit
+
+# Add to .pre-commit-config.yaml:
+- repo: local
+  hooks:
+    - id: docsync-check
+      name: docsync-check
+      entry: uv run docsync check
+      language: system
+      pass_filenames: false
+
+# Install hooks
+pre-commit install
 
 # Now commits block if docs are stale
 git commit -m "refactor auth"

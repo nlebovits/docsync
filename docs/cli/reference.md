@@ -30,18 +30,30 @@ docsync init
 
 ### install-hook
 
-Install the pre-commit hook.
+⚠️ **Deprecated** - Use the pre-commit framework instead.
 
 ```bash
+# Don't use this - it's deprecated
 docsync install-hook
 ```
 
-**Effect:**
+**Modern approach:**
 
-- Creates `.git/hooks/pre-commit` script
-- Hook runs `docsync check` before each commit
+Add to `.pre-commit-config.yaml`:
 
-**When to use:** After `docsync init` to enable enforcement.
+```yaml
+- repo: local
+  hooks:
+    - id: docsync-check
+      name: docsync-check
+      entry: uv run docsync check
+      language: system
+      pass_filenames: false
+```
+
+Then install: `pre-commit install`
+
+**Why deprecated:** Direct `.git/hooks/` scripts conflict with tool managers (uv, pipx, pyenv). The pre-commit framework is the standard approach for Python tools.
 
 ---
 

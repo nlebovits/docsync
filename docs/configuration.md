@@ -110,7 +110,6 @@ Validation catches typos and missing sections. Coverage shows what percentage of
 ```bash
 docsync check           # Pre-commit: validate links + check staged files for stale docs
 docsync list-stale      # Audit: list ALL stale docs across entire repo
-docsync install-hook    # Add pre-commit hook to .pre-commit-config.yaml
 ```
 
 The `check` command runs during pre-commit and performs two validations:

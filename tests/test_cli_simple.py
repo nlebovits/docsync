@@ -112,19 +112,16 @@ def test_cmd_coverage_basic(tmp_path, monkeypatch):
 
 
 def test_cmd_install_hook_creates_hook(tmp_path, monkeypatch):
-    """Test install_hook creates git hook."""
+    """Test install_hook prints deprecation warning."""
     monkeypatch.chdir(tmp_path)
 
     # Initialize git repo
-
     subprocess.run(["git", "init"], cwd=tmp_path, capture_output=True)
 
     result = cmd_install_hook(Namespace())
 
-    assert result == 0
-    hook_file = tmp_path / ".git" / "hooks" / "pre-commit"
-    assert hook_file.exists()
-    assert "docsync" in hook_file.read_text()
+    # Command now returns 1 (deprecated)
+    assert result == 1
 
 
 def test_cmd_check_no_config(tmp_path, monkeypatch):

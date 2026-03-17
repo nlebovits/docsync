@@ -797,33 +797,32 @@ def cmd_clear_cache(args: argparse.Namespace) -> int:
 
 
 def cmd_install_hook(args: argparse.Namespace) -> int:
-    """Install pre-commit hook."""
-    repo_root = Path.cwd()
-    hooks_dir = repo_root / ".git" / "hooks"
-
-    if not hooks_dir.exists():
-        print("⚠️  Not in a git repository")
-        return 1
-
-    hook_path = hooks_dir / "pre-commit"
-    hook_content = """#!/bin/bash
-# docsync pre-commit hook
-
-docsync check
-exit $?
-"""
-
-    if hook_path.exists():
-        print("⚠️  pre-commit hook already exists")
-        print(f"Add this line to {hook_path}:")
-        print("  docsync check")
-        return 1
-
-    hook_path.write_text(hook_content)
-    hook_path.chmod(0o755)
-    print(f"✓ Installed pre-commit hook at {hook_path}")
-
-    return 0
+    """Install pre-commit hook (deprecated - use pre-commit framework instead)."""
+    print("⚠️  This command is deprecated.")
+    print()
+    print("Modern Python projects use the pre-commit framework instead of direct git hooks.")
+    print("This avoids conflicts with tool managers (uv, pipx, pyenv).")
+    print()
+    print("Recommended setup:")
+    print()
+    print("1. Install pre-commit:")
+    print("   pip install pre-commit")
+    print()
+    print("2. Add to .pre-commit-config.yaml:")
+    print()
+    print("   - repo: local")
+    print("     hooks:")
+    print("       - id: docsync-check")
+    print("         name: docsync-check")
+    print("         entry: uv run docsync check  # or: pipx run docsync check")
+    print("         language: system")
+    print("         pass_filenames: false")
+    print()
+    print("3. Install hooks:")
+    print("   pre-commit install")
+    print()
+    print("See: https://pre-commit.com/")
+    return 1
 
 
 def cmd_check_protected(args: argparse.Namespace) -> int:
