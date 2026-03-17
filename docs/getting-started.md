@@ -148,14 +148,3 @@ $ git add docs/reference/cli.md
 $ git commit -m "feat: add --verbose flag"
 ✓ docsync check passed
 ```
-
-## Summary
-
-Starting from 0% coverage, this workflow achieved:
-
-- **26.7% coverage** (16 of 60 files documented)
-- **Protected content** via `.docsync/donttouch`
-- **Pre-commit enforcement**
-- **Audit-driven improvements**
-
-This demonstrates docsync's value: **deterministic staleness detection** enables **reliable, scoped documentation updates**.
