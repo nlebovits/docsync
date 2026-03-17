@@ -21,9 +21,11 @@ docsync bootstrap --apply
 # Validate and check coverage
 docsync validate-links
 docsync coverage
+```
 
-# Set up pre-commit hook to block stale docs
-cat > .pre-commit-config.yaml << 'EOF'
+Add to `.pre-commit-config.yaml`:
+
+```yaml
 repos:
   - repo: local
     hooks:
@@ -33,8 +35,11 @@ repos:
         language: system
         pass_filenames: false
         always_run: true
-EOF
+```
 
+Then install and use:
+
+```bash
 pre-commit install
 
 # Now commits block if docs are stale
