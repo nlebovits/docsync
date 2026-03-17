@@ -9,7 +9,7 @@ def test_hook_no_config(tmp_path):
     src = tmp_path / "src"
     src.mkdir()
     (src / "test.py").write_text("pass")
-    
+
     result = run_hook(tmp_path, staged_files=["src/test.py"])
     assert result.passed
     assert "not configured" in result.message
