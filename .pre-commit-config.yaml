@@ -33,7 +33,7 @@ repos:
       - id: docsync-check
         name: docsync-check
         description: Check for stale documentation when code changes
-        entry: docsync check
+        entry: uv run docsync check
         language: system
         pass_filenames: false
         files: ^src/.*\.py$
