@@ -94,6 +94,33 @@ def run_hook(repo_root: Path, staged_files: list[str] | None = None) -> HookResu
             message="docsync: not configured (skipping checks)",
         )
 
+    # Check 2: Validate links before checking staleness (issue #22)
+    from docsync.toml_links import load_links, validate_links
+
+    links = load_links(repo_root)
+    if links:
+        link_errors = validate_links(links, repo_root)
+        if link_errors:
+            message_lines = ["❌ docsync: broken links detected\n"]
+            message_lines.append("The following links reference missing files or sections:")
+            for error in link_errors:
+                # Indent multi-line errors properly
+                error_lines = error.split("\n")
+                message_lines.append(f"  • {error_lines[0]}")
+                for line in error_lines[1:]:
+                    message_lines.append(f"    {line}")
+            message_lines.append(
+                "\nFix: Update .docsync/links.toml to remove or redirect broken links"
+            )
+            message_lines.append("Hint: Run 'docsync validate-links' to see all broken links")
+
+            return HookResult(
+                passed=False,
+                stale_docs=[],
+                missing_links=[],
+                message="\n".join(message_lines),
+            )
+
     # Build graphs
     docsync_graph = build_docsync_graph(repo_root, config)
     import_graph = {}
