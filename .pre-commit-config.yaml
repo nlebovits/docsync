@@ -28,3 +28,12 @@ repos:
         language: system
         pass_filenames: false
         always_run: true
+
+      # Check for stale documentation
+      - id: docsync-check
+        name: docsync-check
+        description: Check for stale documentation when code changes
+        entry: docsync check
+        language: system
+        pass_filenames: false
+        files: ^src/.*\.py$
