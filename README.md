@@ -79,7 +79,48 @@ docsync bootstrap --apply
 docsync install-hook
 ```
 
-Now commits will be blocked if documentation is stale.
+Or add to `.pre-commit-config.yaml`:
+
+```yaml
+- repo: local
+  hooks:
+    - id: docsync-check
+      name: docsync-check
+      description: Check for stale documentation when code changes
+      entry: docsync check
+      language: system
+      pass_filenames: false
+      files: ^src/.*\.py$  # Adjust pattern for your source directory
+```
+
+### 4. Add to CI (recommended)
+
+Add docsync checks to your CI pipeline for enforcement beyond local pre-commit:
+
+```yaml
+# .github/workflows/ci.yml
+- name: Check for stale documentation
+  run: pip install docsync && docsync check
+```
+
+**CI Behavior Options:**
+
+**Option 1: Fail CI (strict enforcement)**
+```yaml
+- name: Check for stale documentation
+  run: docsync check  # Exit code 1 if stale → CI fails
+```
+Use when: Documentation accuracy is critical (APIs, libraries, contracts)
+
+**Option 2: Warn only (soft reminder)**
+```yaml
+- name: Check for stale documentation
+  run: docsync check || echo "⚠️ Documentation may be stale - please review"
+  continue-on-error: true
+```
+Use when: Docs can lag slightly (internal tools, refactorings that don't affect APIs)
+
+**Why the difference?** Timestamp-based staleness can't distinguish between "docs actually need updating" vs "code changed internally but docs are still accurate." In CI, you might want warnings rather than hard failures to avoid blocking deploys when docs are actually fine.
 
 ## How It Works: Deterministic Checks + Probabilistic Updates
 
