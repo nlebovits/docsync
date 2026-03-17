@@ -1,148 +1,161 @@
 # Getting Started
 
-This guide walks you through setting up docsync in your project.
-
 ## Installation
-
-### Using uv (Recommended)
 
 ```bash
 uv pip install git+https://github.com/nlebovits/docsync.git
 ```
 
-### Using pip
+## Quick Start
 
 ```bash
-pip install git+https://github.com/nlebovits/docsync.git
-```
-
-## Initialize in Your Repository
-
-Navigate to your repository and run:
-
-```bash
-cd your-repo
+# Initialize
 docsync init
-```
 
-This creates:
+# Audit docs for trackability (in Claude Code)
+> Audit my documentation and apply the suggestions
 
-- `[tool.docsync]` configuration in `pyproject.toml`
-- `.docsync/links.toml` file for defining code-doc links
-- `.docsync/` directory for cache storage
-
-## Define Code-Documentation Links
-
-Edit `.docsync/links.toml` to establish relationships between code and docs:
-
-### Simple Whole-File Link
-
-```toml
-[[link]]
-code = "src/auth.py"
-docs = ["docs/api.md"]
-```
-
-When `src/auth.py` changes, `docs/api.md` must be updated.
-
-### Section-Specific Link (Recommended)
-
-```toml
-[[link]]
-code = "src/auth.py"
-docs = ["docs/api.md#Authentication"]
-```
-
-More precise! Only the `Authentication` section needs updating when `src/auth.py` changes.
-
-### Multiple Targets
-
-```toml
-[[link]]
-code = "src/models/user.py"
-docs = [
-  "docs/models.md#User Model",
-  "docs/api.md#User Endpoints",
-]
-```
-
-One code file can link to multiple doc sections.
-
-### Glob Patterns
-
-```toml
-[[link]]
-code = "src/models/*.py"
-docs = ["docs/models.md"]
-```
-
-All Python files in `src/models/` link to `docs/models.md`.
-
-## Auto-Generate Links
-
-Instead of writing links manually, use bootstrap:
-
-```bash
+# Auto-generate convention-based links
 docsync bootstrap --apply
-```
 
-This intelligently proposes links using:
+# Validate and check coverage
+docsync validate-links
+docsync coverage
 
-- **Filename matching**: `src/auth.py` → `docs/auth.md`
-- **Content analysis**: Grep docs for references to code files
-- **Import graph**: Transitive link suggestions
-
-!!! warning
-    Bootstrap can't reliably infer links for human-facing docs (tutorials, examples, READMEs). Review all suggestions carefully.
-
-## Install the Pre-Commit Hook
-
-```bash
+# Enable pre-commit enforcement
 docsync install-hook
+
+# Now commits block if docs are stale:
+git commit -m "refactor auth"
+# ❌ Blocked: docs/api.md#Authentication unchanged since src/auth.py changed
 ```
 
-Now commits will be blocked if documentation is stale:
+## Real-World Example
+
+This walkthrough shows the complete docsync onboarding workflow from an actual session onboarding `portolan-cli`.
+
+### Step 1: Initialize
 
 ```bash
-$ git add src/auth.py
-$ git commit -m "refactor: extract auth helpers"
+$ docsync init
+✓ Created .docsync/links.toml
+✓ Added [tool.docsync] to pyproject.toml
+```
+
+Fix the source directory if needed:
+
+```toml
+# pyproject.toml
+[tool.docsync]
+require_links = ["portolan_cli/**/*.py"]  # Not src/
+```
+
+### Step 2: Check Coverage
+
+```bash
+$ docsync coverage
+Documentation Coverage: 0.0%
+  Total code files: 60
+  Documented: 0
+```
+
+### Step 3: Create Initial Links
+
+Identify key code→doc relationships:
+
+```toml
+# .docsync/links.toml
+
+[[link]]
+code = "portolan_cli/cli.py"
+docs = ["docs/reference/cli.md"]
+
+[[link]]
+code = "portolan_cli/config.py"
+docs = ["docs/reference/configuration.md"]
+
+[[link]]
+code = "portolan_cli/conversion_config.py"
+docs = ["docs/reference/configuration.md#Conversion Configuration"]
+```
+
+### Step 4: Run Audit Skill
+
+In Claude Code:
+
+```
+> Audit my documentation and apply the suggestions
+```
+
+The audit identifies:
+
+- Suggested links from file path mentions
+- Protected sections for `.docsync/donttouch`
+- Restructuring recommendations
+
+### Step 5: Add Protections
+
+```bash
+$ cat .docsync/donttouch
+# License sections
+README.md#License
+docs/contributing.md#License
+
+# Brand colors
+docs/BRANDING.md#Color Palette
+
+# Version requirements
+"Python 3.10+"
+```
+
+### Step 6: Bootstrap Additional Links
+
+```bash
+$ docsync bootstrap --apply
+Found 8 suggested links
+Applied all suggestions to .docsync/links.toml
+```
+
+### Step 7: Final Coverage
+
+```bash
+$ docsync coverage
+Documentation Coverage: 26.7%
+  Total code files: 60
+  Documented: 16
+```
+
+### Step 8: Test the Workflow
+
+Make a change to code:
+
+```bash
+$ git add portolan_cli/cli.py
+$ git commit -m "feat: add --verbose flag"
 
 docsync: ❌ commit blocked
 
 Stale documentation detected:
-  docs/api.md#Authentication
-    Code: src/auth.py
-    Reason: Section unchanged since src/auth.py changed
+  docs/reference/cli.md
+    Code: portolan_cli/cli.py
+    Reason: File unchanged since portolan_cli/cli.py changed
 ```
 
-## Validate Your Setup
-
-### Check All Links Are Valid
+Update docs, then commit succeeds:
 
 ```bash
-docsync validate-links
+$ git add docs/reference/cli.md
+$ git commit -m "feat: add --verbose flag"
+✓ docsync check passed
 ```
 
-Expected output:
-```
-✓ All 10 links are valid
-```
+## Summary
 
-### Check Documentation Coverage
+Starting from 0% coverage, this workflow achieved:
 
-```bash
-docsync coverage
-```
+- **26.7% coverage** (16 of 60 files documented)
+- **Protected content** via `.docsync/donttouch`
+- **Pre-commit enforcement**
+- **Audit-driven improvements**
 
-Expected output:
-```
-Documentation Coverage: 85.0%
-  Total code files: 20
-  Documented: 17
-  Undocumented files:
-    src/experimental.py
-    src/legacy.py
-    src/draft.py
-```
-
-
+This demonstrates docsync's value: **deterministic staleness detection** enables **reliable, scoped documentation updates**.

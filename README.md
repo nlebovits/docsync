@@ -2,17 +2,19 @@
   <img src=".github/branding/profile.png" alt="docsync logo" width="200">
 </p>
 
-`docsync` is a pre-commit hook and CLI tool that deterministically flags when code changes should trigger documentation updates. It outputs agent-friendly JSON with targeted information about what changed and which doc sections need review.
+docsync is a pre-commit hook and CLI tool that deterministically flags when code changes should trigger documentation updates. It outputs agent-friendly JSON with targeted information about what changed and which doc sections need review.
 
-When working fast with tools like Claude, docs drift quickly. Agents excel at changing code but struggle to understand how code changes should trigger doc updates. `docsync` addresses this with deterministic checks:
+When working fast with tools like Claude, docs drift quickly. Agents excel at changing code but struggle to understand how code changes should trigger doc updates. docsync addresses this with deterministic checks.
 
-1. **Pre-commit enforcement**: Flags code changes that should trigger docs updates. Outputs JSON with file paths, sections, and git diffs. Commits block until docs are updated.
+## Three Core Use Cases
 
-2. **Audit skill**: Scores documentation structure for trackability. Identifies which docs can be deterministically verified and which rely on manual review. Makes concrete recommendations.
+**1. Track Doc Sync** - Block commits when linked documentation becomes stale. Define code→doc relationships, docsync uses git diff to detect when docs need updates.
 
-All output is AI-first; `docsync` assumes Claude (or another agent) will consume and act on it.
+**2. Flag Protected Content Changes** - Prevent accidental changes to licenses, brand assets, and policies. Protected sections are never marked stale, protected literals trigger warnings.
 
-**📚 [Full docs](https://nlebovits.github.io/docsync/)** | **[Tutorial](https://nlebovits.github.io/docsync/tutorial/)** | **[CLI Reference](https://nlebovits.github.io/docsync/cli/reference/)**
+**3. Audit for Deterministic Maintainability** - Score documentation structure for trackability using the audit skill in Claude Code. Get concrete suggestions for improvements.
+
+**📚 [Full docs](https://nlebovits.github.io/docsync/)** | **[Getting Started](https://nlebovits.github.io/docsync/getting-started/)** | **[CLI Reference](https://nlebovits.github.io/docsync/cli/reference/)**
 
 ## Quick Start
 
@@ -36,7 +38,7 @@ docsync coverage
 # Enable pre-commit enforcement
 docsync install-hook
 
-# Now commits block if docs are stale:
+# Now commits block if docs are stale
 git commit -m "refactor auth"
 # ❌ Blocked: docs/api.md#Authentication unchanged since src/auth.py changed
 ```
@@ -47,4 +49,4 @@ Apache-2.0
 
 ## Contributing
 
-See [Contributing Guide](https://nlebovits.github.io/docsync/contributing/)
+[Contributing Guide](https://nlebovits.github.io/docsync/contributing/)

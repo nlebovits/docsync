@@ -60,12 +60,7 @@ markdown_extensions:
 nav:
   - Home: index.md
   - Getting Started: getting-started.md
-  - Tutorial: tutorial.md
-  - Concepts:
-      - Links: concepts/links.md
-      - Staleness Detection: concepts/staleness.md
-      - Protected Content: concepts/donttouch.md
-  - CLI Reference: cli/reference.md
   - Configuration: configuration.md
   - Agent Skills: skills.md
+  - CLI Reference: cli/reference.md
   - Contributing: contributing.md

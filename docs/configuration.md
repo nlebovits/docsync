@@ -1,251 +1,115 @@
 # Configuration
 
-docsync is configured via `[tool.docsync]` in `pyproject.toml`.
-
-## Default Configuration
-
-Created by `docsync init`:
+## pyproject.toml
 
 ```toml
 [tool.docsync]
-mode = "block"
-transitive_depth = 1
-enforce_symmetry = true
-require_links = []
-exempt = []
-doc_paths = ["docs/**/*.md", "README.md"]
+require_links = ["src/**/*.py"]  # Code files that must have doc links
+transitive_depth = 1             # Import chain depth for staleness detection
 ```
 
-## Options
+The `require_links` glob determines which code files need documentation. Files matching this pattern without a link in `links.toml` will show up in coverage reports.
 
-### mode
+Set `transitive_depth` to control how deep docsync follows imports when detecting staleness. If `src/auth.py` imports `src/crypto.py`, and crypto changes, should auth docs be marked stale? With depth 1, yes. With depth 0, no.
 
-**Type:** `str`  
-**Default:** `"block"`  
-**Values:** `"block"` | `"warn"`
+## links.toml
 
-Controls enforcement behavior:
-
-- **`block`** - Commits are blocked when docs are stale (exit code 1)
-- **`warn`** - Print warnings but allow commits (exit code 0)
-
-**Example:**
+Define code→doc relationships in `.docsync/links.toml`:
 
 ```toml
-[tool.docsync]
-mode = "warn"  # Non-blocking for initial onboarding
-```
+# Single file → single doc
+[[link]]
+code = "src/auth.py"
+docs = ["docs/api.md"]
 
-**When to use `warn`:** Onboarding a legacy project with lots of stale docs. Gradually increase coverage before switching to `block`.
+# Section-level precision (recommended)
+[[link]]
+code = "src/auth.py"
+docs = ["docs/api.md#Authentication"]
 
----
-
-### transitive_depth
-
-**Type:** `int`  
-**Default:** `1`  
-**Values:** `0` | `1` | `2` | ...
-
-How deep to check imports for transitive staleness:
-
-- **`0`** - Disable transitive staleness (only direct code→doc links)
-- **`1`** - Check direct imports only
-- **`2`** - Check imports of imports
-- **Higher** - Exponentially expensive, rarely useful
-
-**Example:**
-
-```toml
-[tool.docsync]
-transitive_depth = 0  # Disable transitive checks
-```
-
-**Trade-off:**
-
-- Higher depth = more accurate staleness detection
-- Higher depth = slower performance
-
-**Recommendation:** Start with `1`. Increase only if you miss important transitive staleness.
-
----
-
-### enforce_symmetry
-
-**Type:** `bool`  
-**Default:** `true`
-
-Whether to require symmetric links (code→doc implies doc→code).
-
-**Example:**
-
-```toml
-[tool.docsync]
-enforce_symmetry = false  # Allow one-way links
-```
-
-**Effect of `true`:**
-
-If `src/auth.py` links to `docs/api.md`, then `docs/api.md` must also link back to `src/auth.py` (in the graph representation).
-
-**When to disable:** Rarely. Symmetry ensures graph consistency.
-
----
-
-### require_links
-
-**Type:** `list[str]`  
-**Default:** `[]`
-
-Glob patterns for code files that **must** have documentation links.
-
-**Example:**
-
-```toml
-[tool.docsync]
-require_links = ["src/**/*.py"]  # All source files must be documented
-```
-
-**Effect:**
-
-Files matching these patterns will trigger errors if not linked to any docs.
-
-**Use cases:**
-
-- Enforce documentation coverage for production code
-- Exclude tests, scripts, experiments from requirement
-
-**Example with exclusions:**
-
-```toml
-[tool.docsync]
-require_links = ["src/**/*.py"]
-exempt = ["src/experimental/**", "src/legacy/**"]
-```
-
----
-
-### exempt
-
-**Type:** `list[str]`  
-**Default:** `[]`
-
-Glob patterns for code files to **ignore** entirely.
-
-**Example:**
-
-```toml
-[tool.docsync]
-exempt = [
-  "tests/**",
-  "scripts/**",
-  "src/experimental/**",
+# One code file → multiple doc sections
+[[link]]
+code = "src/models/user.py"
+docs = [
+  "docs/models.md#User Model",
+  "docs/api.md#User Endpoints",
 ]
+
+# Glob patterns
+[[link]]
+code = "src/models/*.py"
+docs = ["docs/models.md"]
 ```
 
-**Effect:**
+Section-level links are more precise. When you change `src/auth.py`, only the Authentication section needs updating, not the entire 500-line doc file.
 
-Files matching these patterns:
+docsync parses doc files to find section headings, extracts line ranges, then uses `git diff` to check if those specific lines changed. If the section's lines didn't change since the code changed, it's stale.
 
-- Are not counted in coverage
-- Don't trigger staleness checks
-- Can't be linked in `.docsync/links.toml`
+## Staleness Detection
 
-**Use cases:**
+docsync uses git diff analysis to detect stale docs:
 
-- Exclude test files
-- Exclude scripts and tooling
-- Exclude experimental code
+```bash
+# Get last commit that changed the code file
+git log -1 --format=%H -- src/auth.py
 
----
-
-### doc_paths
-
-**Type:** `list[str]`  
-**Default:** `["docs/**/*.md", "README.md"]`
-
-Glob patterns for files that are considered "documentation."
-
-**Example:**
-
-```toml
-[tool.docsync]
-doc_paths = [
-  "docs/**/*.md",
-  "README.md",
-  "CHANGELOG.md",
-  "CLAUDE.md",
-  "*.rst",  # Include reStructuredText
-]
+# Check if the linked doc section changed since that commit
+git diff <commit> HEAD -- docs/api.md
 ```
 
-**Effect:**
+If the diff shows changes overlapping with the section's line range, the doc was updated. If no overlap, it's stale.
 
-Only files matching these patterns can be link targets.
+This works transitively too. If `src/auth.py` imports `src/crypto.py`, and crypto changes, auth docs can be marked stale (controlled by `transitive_depth`).
 
-**Use cases:**
+## donttouch
 
-- Add reStructuredText (`.rst`) files
-- Include `CLAUDE.md` for AI agent instructions
-- Include `CHANGELOG.md` for version history
+Protect critical content from staleness checks in `.docsync/donttouch`:
 
----
+```
+# Section protection - never mark these as stale
+README.md#License
+docs/contributing.md#Code of Conduct
+CLAUDE.md#Terminology (ENFORCED)
 
-## Example Configurations
-
-### Strict (Production)
-
-```toml
-[tool.docsync]
-mode = "block"
-transitive_depth = 1
-enforce_symmetry = true
-require_links = ["src/**/*.py"]  # All source files must be documented
-exempt = ["tests/**", "scripts/**"]
-doc_paths = ["docs/**/*.md", "README.md", "CLAUDE.md"]
+# Literal protection - warn if these strings change
+"Python 3.11+"
+"Apache-2.0"
+"#7730E1"
 ```
 
-All source code must have docs. Commits blocked on staleness.
+License text, brand colors, version requirements, and policies shouldn't be flagged just because related code changed. Protected sections are skipped during staleness checks. Protected literals trigger warnings if modified.
 
----
-
-### Permissive (Onboarding)
-
-```toml
-[tool.docsync]
-mode = "warn"  # Non-blocking
-transitive_depth = 0  # Disable transitive checks
-enforce_symmetry = false
-require_links = []  # No coverage requirements
-exempt = ["tests/**", "scripts/**", "src/legacy/**"]
-doc_paths = ["docs/**/*.md", "README.md"]
+```bash
+docsync list-protected
 ```
 
-Warnings only. Good for gradual adoption.
+Shows all protected sections and literals.
 
----
+## Bootstrap
 
-### Hybrid (Incremental)
+Auto-generate link suggestions:
 
-```toml
-[tool.docsync]
-mode = "block"
-transitive_depth = 1
-enforce_symmetry = true
-require_links = [
-  "src/core/**/*.py",  # Core modules must be documented
-  "src/api/**/*.py",   # API modules must be documented
-]
-exempt = [
-  "tests/**",
-  "scripts/**",
-  "src/experimental/**",
-  "src/legacy/**",
-]
-doc_paths = ["docs/**/*.md", "README.md", "CLAUDE.md"]
+```bash
+docsync bootstrap --apply
 ```
 
-Enforce docs for critical modules. Exempt legacy and experimental code.
+This uses filename matching (`src/auth.py` → `docs/auth.md`), content analysis (grep docs for code file references), and import graphs to propose links. Review suggestions carefully—bootstrap can't reliably infer links for human-facing docs like tutorials.
 
----
+## Validation and Coverage
 
+```bash
+docsync validate-links  # Check all link targets exist
+docsync coverage        # Show documentation coverage percentage
+```
 
+Validation catches typos and missing sections. Coverage shows what percentage of your `require_links` files have documentation.
+
+## Commands
+
+```bash
+docsync check           # Pre-commit: check staged files for stale docs
+docsync list-stale      # Audit: list ALL stale docs across entire repo
+docsync install-hook    # Add pre-commit hook to .pre-commit-config.yaml
+```
+
+Both `check` and `list-stale` support `--format json` for machine consumption. The JSON output includes file paths, section names, line ranges, and git diffs—everything an AI agent needs to make scoped updates.
