@@ -5,7 +5,8 @@ import json
 import sys
 from pathlib import Path
 
-from docsync.config import load_config
+from docsync.config import DocsyncConfig, load_config
+from docsync.donttouch import check_protections, load_donttouch
 from docsync.graph import build_docsync_graph, get_linked_docs
 from docsync.imports import build_import_graph
 from docsync.staleness import is_doc_stale
@@ -402,7 +403,7 @@ def cmd_list_stale(args: argparse.Namespace) -> int:
 
     # Check all code files in graph
     stale_items = []
-    code_files = {k for k in graph if not any(k.endswith(ext) for ext in [".md", ".rst"])}
+    code_files = {k for k in graph.keys() if not any(k.endswith(ext) for ext in [".md", ".rst"])}
 
     for code_file in code_files:
         doc_targets = get_linked_docs(code_file, graph, config)
@@ -533,7 +534,7 @@ def cmd_coverage(args: argparse.Namespace) -> int:
         print(f"  Undocumented: {len(undocumented)}")
 
         if undocumented and len(undocumented) <= 10:
-            print("\nUndocumented files:")
+            print(f"\nUndocumented files:")
             for f in undocumented:
                 print(f"  {f}")
         elif undocumented:
@@ -555,14 +556,17 @@ def cmd_info(args: argparse.Namespace) -> int:
     # Find links for this file
     related_links = []
     for link in links:
-        if link.code == file_path or any(str(doc) == file_path for doc in link.docs):
+        if link.code == file_path:
+            related_links.append(link)
+        elif any(str(doc) == file_path for doc in link.docs):
             related_links.append(link)
 
     if args.format == "json":
         result = {
             "file": file_path,
             "links": [
-                {"code": link.code, "docs": [str(d) for d in link.docs]} for link in related_links
+                {"code": link.code, "docs": [str(d) for d in link.docs]}
+                for link in related_links
             ],
             "connected_files": list(graph.get(file_path, set())),
         }
@@ -627,9 +631,95 @@ exit $?
     return 0
 
 
+def cmd_check_protected(args: argparse.Namespace) -> int:
+    """Check for violations in staged files."""
+    import subprocess
+
+    repo_root = Path.cwd()
+
+    # Get staged files
+    try:
+        result = subprocess.run(
+            ["git", "diff", "--cached", "--name-only"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+    except subprocess.CalledProcessError:
+        print("Error: Not in a git repository")
+        return 1
+
+    staged_files = [f for f in result.stdout.strip().split("\n") if f]
+    if not staged_files:
+        print("No staged files")
+        return 0
+
+    # Load protection rules
+    rules = load_donttouch(repo_root)
+    if not rules:
+        print("No .docsync/donttouch file found")
+        return 0
+
+    # Check for violations
+    violations = check_protections(repo_root, staged_files, rules)
+
+    if not violations:
+        print("✓ No protection violations")
+        return 0
+
+    print(f"⛔ Found {len(violations)} violation(s):")
+    for v in violations:
+        if v.section:
+            print(f"  {v.file}#{v.section}: {v.reason}")
+        else:
+            print(f"  {v.file}: {v.reason}")
+
+    return 1
+
+
+def cmd_list_protected(args: argparse.Namespace) -> int:
+    """List all protection rules."""
+    repo_root = Path.cwd()
+
+    rules = load_donttouch(repo_root)
+    if not rules:
+        print("No .docsync/donttouch file found")
+        return 0
+
+    # File patterns
+    if rules.file_pattern_strings:
+        print("Protected files:")
+        for pattern in rules.file_pattern_strings:
+            print(f"  {pattern}")
+
+    # Section protections
+    if rules.section_protections:
+        print("\nProtected sections:")
+        for file, sections in rules.section_protections.items():
+            for section in sections:
+                print(f"  {file}#{section}")
+
+    # Scoped literals
+    if rules.scoped_literals:
+        print("\nFile-scoped literals:")
+        for file, literals in rules.scoped_literals.items():
+            for literal in literals:
+                print(f'  {file}: "{literal}"')
+
+    # Global literals
+    if rules.global_literals:
+        print("\nGlobal literals:")
+        for literal in rules.global_literals:
+            print(f'  "{literal}"')
+
+    return 0
+
+
 def main() -> int:
     """Main CLI entry point."""
-    parser = argparse.ArgumentParser(description="docsync: Keep code and documentation in sync")
+    parser = argparse.ArgumentParser(
+        description="docsync: Keep code and documentation in sync"
+    )
     subparsers = parser.add_subparsers(dest="command", help="Command to run")
 
     # init
@@ -684,6 +774,12 @@ def main() -> int:
     # install-hook
     subparsers.add_parser("install-hook", help="Install git pre-commit hook")
 
+    # check-protected
+    subparsers.add_parser("check-protected", help="Check staged files for protection violations")
+
+    # list-protected
+    subparsers.add_parser("list-protected", help="List all protection rules")
+
     args = parser.parse_args()
 
     if not args.command:
@@ -702,6 +798,8 @@ def main() -> int:
         "info": cmd_info,
         "clear-cache": cmd_clear_cache,
         "install-hook": cmd_install_hook,
+        "check-protected": cmd_check_protected,
+        "list-protected": cmd_list_protected,
     }
 
     return commands[args.command](args)
