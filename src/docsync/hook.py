@@ -1,13 +1,15 @@
-"""Pre-commit hook entry point."""
+"""Pre-commit hook entry point with TOML-based link checking."""
 
 import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from docsync.config import DocsyncConfig, load_config
+from docsync.config import load_config
 from docsync.graph import build_docsync_graph, get_linked_docs
-from docsync.imports import build_import_graph, get_dependents
+from docsync.imports import build_import_graph
+from docsync.staleness import is_doc_stale
+from docsync.toml_links import LinkTarget
 
 
 @dataclass
@@ -15,31 +17,25 @@ class HookResult:
     """Result of running the hook."""
 
     passed: bool
-    direct_missing: dict[str, set[str]]  # code_file → set of unstaged doc files
-    transitive_missing: dict[
-        str, dict[str, set[str]]
-    ]  # code_file → {dependent_file → set of unstaged doc files}
-    message: str  # formatted output message
+    stale_docs: list[dict]  # List of stale doc items
+    missing_links: list[str]  # Files requiring links but missing them
+    message: str  # Formatted output message
 
 
 def run_hook(repo_root: Path, staged_files: list[str] | None = None) -> HookResult:
     """
-    Main hook logic.
-
-    If staged_files is None, reads from git diff --cached --name-only.
-    If provided (for testing), uses the given list.
+    Main hook logic using TOML-based links and git diff staleness detection.
 
     Returns a HookResult with pass/fail and structured information about
-    what's missing.
+    what's stale or missing.
     """
     # Load config
     config = load_config(repo_root)
     if config is None:
-        # Not configured - pass with message
         return HookResult(
             passed=True,
-            direct_missing={},
-            transitive_missing={},
+            stale_docs=[],
+            missing_links=[],
             message="docsync: not configured (skipping checks)",
         )
 
@@ -47,54 +43,76 @@ def run_hook(repo_root: Path, staged_files: list[str] | None = None) -> HookResu
     if staged_files is None:
         staged_files = _get_staged_files(repo_root)
 
-    staged_set = set(staged_files)
+    if not staged_files:
+        return HookResult(
+            passed=True,
+            stale_docs=[],
+            missing_links=[],
+            message="docsync: no staged files",
+        )
 
-    # Build both graphs
+    # Build graphs
     docsync_graph = build_docsync_graph(repo_root, config)
-    import_graph = build_import_graph(repo_root)
+    import_graph = {}
+    if config.transitive_depth > 0:
+        import_graph = build_import_graph(repo_root)
 
-    # Track missing docs
-    direct_missing: dict[str, set[str]] = {}
-    transitive_missing: dict[str, dict[str, set[str]]] = {}
+    stale_docs = []
+    missing_links = []
 
-    # Check each staged file
+    # Check each staged code file
     for staged_file in staged_files:
-        # Skip if this is a doc file (we only check code → doc direction)
+        # Skip doc files
         if _is_doc_file(staged_file, config):
             continue
 
-        # Skip if not in require_links globs (and not already in docsync_graph)
-        if staged_file not in docsync_graph and not _matches_require_links(
-            staged_file, config, repo_root
-        ):
+        # Check if this file requires links
+        requires_link = _matches_require_links(staged_file, config, repo_root)
+        has_link = staged_file in docsync_graph
+
+        if requires_link and not has_link:
+            missing_links.append(staged_file)
             continue
 
-        # Check direct doc dependencies
-        direct_docs = get_linked_docs(staged_file, docsync_graph, config)
-        unstaged_direct = direct_docs - staged_set
-        if unstaged_direct:
-            direct_missing[staged_file] = unstaged_direct
+        if not has_link:
+            # File doesn't require link, skip
+            continue
 
-        # Check transitive dependencies (if enabled)
-        if config.transitive_depth > 0:
-            dependents = get_dependents(staged_file, import_graph, config.transitive_depth)
-            for dependent in dependents:
-                dep_docs = get_linked_docs(dependent, docsync_graph, config)
-                unstaged_dep_docs = dep_docs - staged_set
-                if unstaged_dep_docs:
-                    transitive_missing.setdefault(staged_file, {})[dependent] = unstaged_dep_docs
+        # Get linked doc targets
+        doc_targets = get_linked_docs(staged_file, docsync_graph, config)
+
+        # Get transitive imports
+        transitive_imports = []
+        if config.transitive_depth > 0 and staged_file in import_graph:
+            transitive_imports = list(import_graph[staged_file])
+
+        # Check staleness for each doc target
+        for doc_target_str in doc_targets:
+            target = LinkTarget.parse(doc_target_str)
+            is_stale, reason = is_doc_stale(repo_root, staged_file, target, transitive_imports)
+
+            if is_stale:
+                stale_docs.append(
+                    {
+                        "code_file": staged_file,
+                        "doc_target": doc_target_str,
+                        "doc_file": target.file,
+                        "section": target.section,
+                        "reason": reason,
+                    }
+                )
 
     # Determine pass/fail
-    has_missing = bool(direct_missing or transitive_missing)
-    passed = not has_missing or config.mode == "warn"
+    has_issues = bool(stale_docs or missing_links)
+    passed = not has_issues or config.mode == "warn"
 
     # Format message
-    message = _format_message(config, direct_missing, transitive_missing, passed)
+    message = _format_message(config, stale_docs, missing_links, passed)
 
     return HookResult(
         passed=passed,
-        direct_missing=direct_missing,
-        transitive_missing=transitive_missing,
+        stale_docs=stale_docs,
+        missing_links=missing_links,
         message=message,
     )
 
@@ -110,13 +128,13 @@ def _get_staged_files(repo_root: Path) -> list[str]:
             check=True,
         )
         files = result.stdout.strip().split("\n")
-        return [f for f in files if f]  # Filter out empty strings
+        return [f for f in files if f]
     except subprocess.CalledProcessError as e:
         print(f"Error getting staged files: {e}", file=sys.stderr)
         return []
 
 
-def _is_doc_file(file_path: str, config: DocsyncConfig) -> bool:
+def _is_doc_file(file_path: str, config) -> bool:
     """Check if a file matches any doc_paths pattern."""
     from pathlib import PurePath
 
@@ -137,56 +155,50 @@ def _is_doc_file(file_path: str, config: DocsyncConfig) -> bool:
     return False
 
 
-def _matches_require_links(file_path: str, config: DocsyncConfig, repo_root: Path) -> bool:
+def _matches_require_links(file_path: str, config, repo_root: Path) -> bool:
     """Check if a file matches any require_links pattern."""
-
     from docsync.graph import _match_globs
 
     file = repo_root / file_path
     return _match_globs(file, config.require_links, repo_root)
 
 
-def _format_message(
-    config: DocsyncConfig,
-    direct_missing: dict[str, set[str]],
-    transitive_missing: dict[str, dict[str, set[str]]],
-    passed: bool,
-) -> str:
+def _format_message(config, stale_docs: list[dict], missing_links: list[str], passed: bool) -> str:
     """Format the output message."""
-    if not direct_missing and not transitive_missing:
-        return "docsync: all linked docs are staged. ✓"
+    if not stale_docs and not missing_links:
+        return "docsync: ✓ all documentation is up to date"
 
     lines = []
 
     # Header
     if config.mode == "warn":
-        lines.append("docsync: commit warning\n")
+        lines.append("docsync: ⚠️  commit warning\n")
     else:
-        lines.append("docsync: commit blocked\n")
+        lines.append("docsync: ❌ commit blocked\n")
 
-    # Direct doc dependencies
-    if direct_missing:
-        lines.append("Direct doc dependencies:")
-        for code_file, docs in sorted(direct_missing.items()):
-            lines.append(f"  {code_file}")
-            for doc in sorted(docs):
-                lines.append(f"    → {doc} (not staged)")
+    # Missing links
+    if missing_links:
+        lines.append("Files requiring documentation links:")
+        for file in sorted(missing_links):
+            lines.append(f"  {file}")
+        lines.append("\nAdd links in .docsync/links.toml or run 'docsync bootstrap'")
         lines.append("")
 
-    # Transitive doc dependencies
-    if transitive_missing:
-        lines.append("Transitive doc dependencies (via import graph):")
-        for code_file, dependents in sorted(transitive_missing.items()):
-            lines.append(f"  {code_file} changed, which affects:")
-            for dependent, docs in sorted(dependents.items()):
-                lines.append(f"    {dependent} (imports {code_file})")
-                for doc in sorted(docs):
-                    lines.append(f"      → {doc} (not staged)")
+    # Stale docs
+    if stale_docs:
+        lines.append("Stale documentation detected:")
+        for item in stale_docs:
+            if item["section"]:
+                lines.append(f"  {item['doc_file']}#{item['section']}")
+            else:
+                lines.append(f"  {item['doc_file']}")
+            lines.append(f"    Code: {item['code_file']}")
+            lines.append(f"    Reason: {item['reason']}")
         lines.append("")
 
     # Footer
     if not passed:
-        lines.append("Update the docs and stage them, or use --no-verify to force.")
+        lines.append("Update the docs or use --no-verify to force commit.")
 
     return "\n".join(lines)
 

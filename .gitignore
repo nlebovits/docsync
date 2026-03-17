@@ -42,5 +42,6 @@ testbed/
 # UV/ruff cache
 .ruff_cache/
 
-# docsync cache
-.docsync/
+# docsync cache (but keep links.toml)
+.docsync/*
+!.docsync/links.toml
