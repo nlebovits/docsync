@@ -67,6 +67,5 @@ nav:
       - Protected Content: concepts/donttouch.md
   - CLI Reference: cli/reference.md
   - Configuration: configuration.md
-  - Skills:
-      - Audit: skills/audit.md
+  - Agent Skills: skills.md
   - Contributing: contributing.md

@@ -20,13 +20,18 @@ All output is AI-first; `docsync` assumes Claude (or another agent) will consume
 # Install
 uv pip install git+https://github.com/nlebovits/docsync.git
 
-# Initialize (creates .docsync/links.toml and pyproject.toml config)
+# Initialize
 docsync init
 
-# Define relationships: code file → doc section
-echo '[[link]]
-code = "src/auth.py"
-docs = ["docs/api.md#Authentication"]' >> .docsync/links.toml
+# Audit docs for trackability (in Claude Code)
+> Audit my documentation and apply the suggestions
+
+# Auto-generate convention-based links
+docsync bootstrap --apply
+
+# Validate and check coverage
+docsync validate-links
+docsync coverage
 
 # Enable pre-commit enforcement
 docsync install-hook
