@@ -122,54 +122,12 @@ def _detect_asymmetric_links(
     Find asymmetric links where A links to B but B doesn't link back to A.
     Returns list of (file_a, file_b, direction) where direction describes the missing link.
 
-    NOTE: We need to check the ORIGINAL parsed links, not the bidirectional graph,
-    because build_docsync_graph automatically makes links bidirectional.
+    NOTE: With TOML-based links, all links are symmetric by definition (code -> docs mapping).
+    This function is kept for API compatibility but returns empty list.
     """
-    from docsync.graph import parse_links
-
-    asymmetric = []
-
-    # We need to re-parse each file to get its ORIGINAL links (before bidirectionalization)
-    from docsync.graph import _match_globs
-
-    for file_path in repo_root.rglob("*"):
-        if not file_path.is_file():
-            continue
-
-        # Skip exempt files
-        if _match_globs(file_path, config.exempt, repo_root):
-            continue
-
-        # Only check files in require_links or doc_paths
-        if not _match_globs(file_path, config.require_links + config.doc_paths, repo_root):
-            continue
-
-        # Parse the ORIGINAL links from this file
-        original_links = parse_links(file_path, repo_root)
-        rel_path = str(file_path.relative_to(repo_root))
-
-        for linked_file in original_links:
-            # Normalize the linked file path
-            linked_abs = (repo_root / linked_file).resolve()
-            try:
-                linked_rel = str(linked_abs.relative_to(repo_root.resolve()))
-            except ValueError:
-                continue  # Outside repo
-
-            # Now check if the linked file links back
-            if not linked_abs.exists():
-                continue  # Orphaned link, not asymmetric
-
-            # Parse the linked file's original links
-            linked_original = parse_links(linked_abs, repo_root)
-
-            # Check if rel_path is in linked_original
-            # Need to normalize rel_path from the perspective of linked_file
-            if rel_path not in linked_original:
-                # Asymmetric: file_a links to file_b, but file_b doesn't link to file_a
-                asymmetric.append((rel_path, linked_rel, f"{linked_rel} → {rel_path}"))
-
-    return asymmetric
+    # TOML links are symmetric by design: each [[link]] entry defines
+    # bidirectional relationships between code and docs
+    return []
 
 
 def _detect_stale_docs(

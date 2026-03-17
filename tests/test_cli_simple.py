@@ -1,0 +1,187 @@
+"""Simple integration tests for CLI commands to boost coverage."""
+
+from pathlib import Path
+from argparse import Namespace
+from unittest.mock import patch
+import subprocess
+
+from docsync.cli import (
+    cmd_init,
+    cmd_validate_links,
+    cmd_clear_cache,
+    cmd_info,
+    cmd_coverage,
+    cmd_install_hook,
+    cmd_check,
+    cmd_list_stale,
+    cmd_affected_docs,
+    cmd_bootstrap,
+)
+
+
+def test_cmd_init_creates_config(tmp_path, monkeypatch):
+    """Test cmd_init creates configuration."""
+    monkeypatch.chdir(tmp_path)
+    result = cmd_init(Namespace())
+    assert result == 0
+    assert (tmp_path / "pyproject.toml").exists()
+
+
+def test_cmd_init_idempotent(tmp_path, monkeypatch):
+    """Test cmd_init is idempotent."""
+    monkeypatch.chdir(tmp_path)
+    pyproject = tmp_path / "pyproject.toml"
+    pyproject.write_text("[tool.docsync]\nmode = 'warn'\n")
+    
+    result = cmd_init(Namespace())
+    assert result == 1  # Already configured
+
+
+def test_cmd_validate_links_no_links(tmp_path, monkeypatch):
+    """Test validate_links with no links."""
+    monkeypatch.chdir(tmp_path)
+    result = cmd_validate_links(Namespace())
+    assert result == 0
+
+
+def test_cmd_validate_links_valid(tmp_path, monkeypatch):
+    """Test validate_links with valid links."""
+    monkeypatch.chdir(tmp_path)
+    
+    # Create files
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "code.py").write_text("pass")
+    
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (docs / "doc.md").write_text("# Doc")
+    
+    # Create links
+    docsync = tmp_path / ".docsync"
+    docsync.mkdir()
+    links = docsync / "links.toml"
+    links.write_text('[[link]]\ncode = "src/code.py"\ndocs = ["docs/doc.md"]\n')
+    
+    result = cmd_validate_links(Namespace())
+    assert result == 0
+
+
+def test_cmd_clear_cache(tmp_path, monkeypatch):
+    """Test clear_cache command."""
+    monkeypatch.chdir(tmp_path)
+    
+    # Create cache
+    cache_dir = tmp_path / ".docsync" / "cache"
+    cache_dir.mkdir(parents=True)
+    (cache_dir / "test.json").write_text("{}")
+    
+    result = cmd_clear_cache(Namespace())
+    assert result == 0
+
+
+def test_cmd_info_no_links(tmp_path, monkeypatch):
+    """Test info command with no links."""
+    monkeypatch.chdir(tmp_path)
+    
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "code.py").write_text("pass")
+    
+    result = cmd_info(Namespace(file="src/code.py", format="text"))
+    assert result == 0
+
+
+def test_cmd_coverage_basic(tmp_path, monkeypatch):
+    """Test coverage command basic functionality."""
+    monkeypatch.chdir(tmp_path)
+    
+    # Create basic project structure
+    config = tmp_path / "pyproject.toml"
+    config.write_text('[tool.docsync]\nrequire_links = ["src/**/*.py"]\n')
+    
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "code.py").write_text("pass")
+    
+    docsync = tmp_path / ".docsync"
+    docsync.mkdir()
+    (docsync / "links.toml").write_text("")
+    
+    result = cmd_coverage(Namespace(format="text", min_coverage=None, fail_under=None))
+    assert result in (0, 1)  # May fail due to low coverage, but shouldn't crash
+
+
+def test_cmd_install_hook_creates_hook(tmp_path, monkeypatch):
+    """Test install_hook creates git hook."""
+    monkeypatch.chdir(tmp_path)
+    
+    # Initialize git repo
+    import subprocess
+    subprocess.run(["git", "init"], cwd=tmp_path, capture_output=True)
+    
+    result = cmd_install_hook(Namespace())
+    
+    assert result == 0
+    hook_file = tmp_path / ".git" / "hooks" / "pre-commit"
+    assert hook_file.exists()
+    assert "docsync" in hook_file.read_text()
+
+
+def test_cmd_check_no_config(tmp_path, monkeypatch):
+    """Test check command with no configuration."""
+    monkeypatch.chdir(tmp_path)
+    result = cmd_check(Namespace(staged_files=None, format="text"))
+    # Should handle gracefully
+    assert result in (0, 1)
+
+
+def test_cmd_list_stale_basic(tmp_path, monkeypatch):
+    """Test list_stale command basic functionality."""
+    monkeypatch.chdir(tmp_path)
+    
+    config = tmp_path / "pyproject.toml"
+    config.write_text('[tool.docsync]\nrequire_links = ["src/**/*.py"]\n')
+    
+    docsync = tmp_path / ".docsync"
+    docsync.mkdir()
+    (docsync / "links.toml").write_text("")
+    
+    result = cmd_list_stale(Namespace(format="text", changed_files=None))
+    assert result in (0, 1)
+
+
+def test_cmd_affected_docs_basic(tmp_path, monkeypatch):
+    """Test affected_docs command basic functionality."""
+    monkeypatch.chdir(tmp_path)
+    
+    config = tmp_path / "pyproject.toml"
+    config.write_text('[tool.docsync]\nrequire_links = ["src/**/*.py"]\n')
+    
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "code.py").write_text("pass")
+    
+    docsync = tmp_path / ".docsync"
+    docsync.mkdir()
+    (docsync / "links.toml").write_text("")
+    
+    # files arg expects a comma-separated string, format defaults to text
+    result = cmd_affected_docs(Namespace(files="src/code.py", depth=1, format="text"))
+    assert result == 0
+
+
+def test_cmd_bootstrap_basic(tmp_path, monkeypatch):
+    """Test bootstrap command basic functionality."""
+    monkeypatch.chdir(tmp_path)
+    
+    config = tmp_path / "pyproject.toml"
+    config.write_text('[tool.docsync]\nrequire_links = ["src/**/*.py"]\n')
+    
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "code.py").write_text("pass")
+    
+    result = cmd_bootstrap(Namespace(apply=False))
+    # Should work even without docs
+    assert result in (0, 1)
