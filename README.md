@@ -35,9 +35,9 @@ docsync bootstrap --apply
 docsync validate-links
 docsync coverage
 
-# Now commits block if docs are stale (via .pre-commit-config.yaml)
-git commit -m "refactor auth"
-# ❌ Blocked: docs/api.md#Authentication unchanged since src/auth.py changed
+# Set up pre-commit hook
+# See: https://nlebovits.github.io/docsync/getting-started/#pre-commit-setup
+pre-commit install
 ```
 
 ## License
