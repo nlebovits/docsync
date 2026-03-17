@@ -3,7 +3,12 @@
 from argparse import Namespace
 from pathlib import Path
 
-from docsync.cli import EXCLUDED_DIRS, cmd_init, detect_source_directories
+from docsync.cli import (
+    EXCLUDED_DIRS,
+    _is_valid_package_pattern,
+    cmd_init,
+    detect_source_directories,
+)
 
 
 class TestDetectSourceDirectories:
@@ -112,8 +117,21 @@ class TestDetectSourceDirectories:
         (pkg_dir / "__init__.py").write_text("")
 
         result = detect_source_directories(tmp_path)
-        # Should find src as the top-level directory
-        assert result == ["src/**/*.py"]
+        # Should find the actual package under src/, not just src/
+        assert result == ["src/mypackage/**/*.py"]
+
+    def test_detects_multiple_packages_under_src(self, tmp_path: Path) -> None:
+        """Detect multiple packages under src/ directory."""
+        src_dir = tmp_path / "src"
+        src_dir.mkdir()
+
+        for name in ["alpha", "beta"]:
+            pkg_dir = src_dir / name
+            pkg_dir.mkdir()
+            (pkg_dir / "__init__.py").write_text("")
+
+        result = detect_source_directories(tmp_path)
+        assert sorted(result) == ["src/alpha/**/*.py", "src/beta/**/*.py"]
 
     def test_reads_hatch_packages_config(self, tmp_path: Path) -> None:
         """Read package configuration from [tool.hatch.build.targets.wheel]."""
@@ -197,6 +215,88 @@ packages = ["src/specified"]
         result = detect_source_directories(tmp_path)
         # Should fall back to scanning
         assert result == ["mypackage/**/*.py"]
+
+    def test_reads_poetry_packages_config(self, tmp_path: Path) -> None:
+        """Read package configuration from [tool.poetry.packages]."""
+        pyproject = tmp_path / "pyproject.toml"
+        pyproject.write_text("""
+[project]
+name = "myproject"
+version = "1.0.0"
+
+[[tool.poetry.packages]]
+include = "mypackage"
+from = "src"
+""")
+
+        result = detect_source_directories(tmp_path)
+        assert result == ["src/mypackage/**/*.py"]
+
+    def test_reads_poetry_packages_without_from(self, tmp_path: Path) -> None:
+        """Read Poetry packages config without 'from' directory."""
+        pyproject = tmp_path / "pyproject.toml"
+        pyproject.write_text("""
+[project]
+name = "myproject"
+version = "1.0.0"
+
+[[tool.poetry.packages]]
+include = "mypackage"
+""")
+
+        result = detect_source_directories(tmp_path)
+        assert result == ["mypackage/**/*.py"]
+
+    def test_rejects_wildcard_patterns(self, tmp_path: Path) -> None:
+        """Reject package paths containing wildcards."""
+        pyproject = tmp_path / "pyproject.toml"
+        pyproject.write_text("""
+[project]
+name = "myproject"
+version = "1.0.0"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/*"]
+""")
+
+        # Create a package for fallback scanning
+        pkg_dir = tmp_path / "mypackage"
+        pkg_dir.mkdir()
+        (pkg_dir / "__init__.py").write_text("")
+
+        result = detect_source_directories(tmp_path)
+        # Should skip the wildcard pattern and fall back to scanning
+        assert result == ["mypackage/**/*.py"]
+
+    def test_handles_unreadable_directories(self, tmp_path: Path) -> None:
+        """Handle directories we can't read gracefully."""
+        # Create a package
+        pkg_dir = tmp_path / "mypackage"
+        pkg_dir.mkdir()
+        (pkg_dir / "__init__.py").write_text("")
+
+        # This tests that the function doesn't crash on permission errors
+        # We can't easily simulate permission errors in tests, but we verify
+        # the happy path still works
+        result = detect_source_directories(tmp_path)
+        assert result == ["mypackage/**/*.py"]
+
+
+class TestIsValidPackagePattern:
+    """Tests for the _is_valid_package_pattern helper."""
+
+    def test_accepts_normal_patterns(self) -> None:
+        """Accept normal package patterns."""
+        assert _is_valid_package_pattern("src/mypackage/**/*.py")
+        assert _is_valid_package_pattern("mypackage/**/*.py")
+        assert _is_valid_package_pattern("lib/deep/path/**/*.py")
+
+    def test_rejects_wildcards_in_path(self) -> None:
+        """Reject patterns with wildcards in the package path."""
+        assert not _is_valid_package_pattern("src/*/**/*.py")
+        assert not _is_valid_package_pattern("*/**/*.py")
+        assert not _is_valid_package_pattern("src/pkg?/**/*.py")
+        assert not _is_valid_package_pattern("src/[abc]/**/*.py")
 
 
 class TestExcludedDirs:

@@ -50,15 +50,25 @@ EXCLUDED_DIRS = frozenset(
 )
 
 
+def _is_valid_package_pattern(pattern: str) -> bool:
+    """Check if a pattern is valid (no wildcards in the package path)."""
+    # Reject patterns with wildcards before the final /**/*.py
+    prefix = pattern.removesuffix("/**/*.py")
+    return "*" not in prefix and "?" not in prefix and "[" not in prefix
+
+
 def detect_source_directories(repo_root: Path) -> list[str]:
     """Detect Python source directories in a project.
 
     Detection strategy:
-    1. Check pyproject.toml for explicit package configuration
+    1. Check pyproject.toml for explicit package configuration (hatch, setuptools, poetry)
     2. Look for directories containing __init__.py (Python packages)
     3. Fall back to src/ if nothing found
 
     Returns a list of glob patterns like ["src/**/*.py", "mypackage/**/*.py"]
+
+    Note: Namespace packages (without __init__.py) are not detected by strategy 2.
+    Use pyproject.toml configuration for namespace packages.
     """
     patterns: list[str] = []
 
@@ -79,47 +89,81 @@ def detect_source_directories(repo_root: Path) -> list[str]:
                 .get("packages", [])
             )
             for pkg in hatch_packages:
-                # pkg is like "src/docsync" -> "src/docsync/**/*.py"
-                patterns.append(f"{pkg}/**/*.py")
+                pattern = f"{pkg}/**/*.py"
+                if _is_valid_package_pattern(pattern):
+                    patterns.append(pattern)
 
-            # Check [tool.setuptools.packages] or [tool.setuptools.package-dir]
+            # Check [tool.setuptools.packages]
             setuptools = data.get("tool", {}).get("setuptools", {})
             if "packages" in setuptools:
                 for pkg in setuptools["packages"]:
-                    patterns.append(f"{pkg}/**/*.py")
+                    pattern = f"{pkg}/**/*.py"
+                    if _is_valid_package_pattern(pattern):
+                        patterns.append(pattern)
+
+            # Check [tool.setuptools.package-dir] - maps package names to paths
             if "package-dir" in setuptools:
-                for _name, path in setuptools["package-dir"].items():
-                    if path:  # Could be "" for root
-                        patterns.append(f"{path}/**/*.py")
+                for _pkg_name, path in setuptools["package-dir"].items():
+                    if path:  # Skip empty string (root package)
+                        pattern = f"{path}/**/*.py"
+                        if _is_valid_package_pattern(pattern):
+                            patterns.append(pattern)
+
+            # Check [tool.poetry.packages] - Poetry configuration
+            poetry_packages = data.get("tool", {}).get("poetry", {}).get("packages", [])
+            for pkg_config in poetry_packages:
+                if isinstance(pkg_config, dict):
+                    include = pkg_config.get("include", "")
+                    from_dir = pkg_config.get("from", "")
+                    if include:
+                        path = f"{from_dir}/{include}" if from_dir else include
+                        pattern = f"{path}/**/*.py"
+                        if _is_valid_package_pattern(pattern):
+                            patterns.append(pattern)
 
             if patterns:
                 return patterns
-        except Exception:
-            pass  # Fall through to directory scanning
+
+        except (OSError, tomllib.TOMLDecodeError):
+            # Fall through to directory scanning on parse errors
+            pass
 
     # Strategy 2: Look for directories with __init__.py
     package_dirs: set[str] = set()
 
-    for init_file in repo_root.rglob("__init__.py"):
-        # Get the package directory (parent of __init__.py)
-        pkg_dir = init_file.parent
-        rel_path = pkg_dir.relative_to(repo_root)
+    try:
+        for init_file in repo_root.rglob("__init__.py"):
+            try:
+                # Get the package directory (parent of __init__.py)
+                pkg_dir = init_file.parent
+                rel_path = pkg_dir.relative_to(repo_root)
 
-        # Skip excluded directories
-        parts = rel_path.parts
-        if any(part.lower() in EXCLUDED_DIRS for part in parts):
-            continue
+                # Skip excluded directories
+                parts = rel_path.parts
+                if any(part.lower() in EXCLUDED_DIRS for part in parts):
+                    continue
 
-        # Skip hidden directories
-        if any(part.startswith(".") for part in parts):
-            continue
+                # Skip hidden directories
+                if any(part.startswith(".") for part in parts):
+                    continue
 
-        # Find the top-level package directory
-        # e.g., if we find src/mypackage/subpkg/__init__.py,
-        # we want src/mypackage, not src/mypackage/subpkg
-        top_level = parts[0] if parts else ""
-        if top_level and top_level.lower() not in EXCLUDED_DIRS:
-            package_dirs.add(top_level)
+                # Determine the package pattern based on structure
+                if len(parts) >= 2 and parts[0].lower() == "src":
+                    # src layout: src/mypackage/ -> use src/mypackage/**/*.py
+                    # Find the actual package (first dir after src with __init__.py)
+                    pkg_path = parts[0] + "/" + parts[1]
+                    package_dirs.add(pkg_path)
+                elif len(parts) >= 1:
+                    # Flat layout: mypackage/ -> use mypackage/**/*.py
+                    package_dirs.add(parts[0])
+
+            except (OSError, ValueError):
+                # Skip files we can't access or paths we can't resolve
+                continue
+
+    except OSError:
+        # Handle permission errors or symlink issues during traversal
+        pass
 
     # Convert to glob patterns
     for pkg_dir in sorted(package_dirs):
