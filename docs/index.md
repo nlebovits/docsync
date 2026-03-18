@@ -63,6 +63,9 @@ docsync init
 # Auto-generate convention-based links
 docsync bootstrap --apply
 
+# Mark auto-generated docs (e.g., from mkdocs-click) to skip staleness
+# Edit .docsync/links.toml and add: auto_generated = true
+
 # Validate and check coverage
 docsync validate-links
 docsync coverage
