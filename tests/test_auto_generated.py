@@ -316,3 +316,128 @@ def test_validation_still_runs_for_auto_generated(tmp_path):
 
     assert len(errors) > 0
     assert "missing.md" in errors[0]
+
+
+def test_multiple_links_same_code_file(git_repo, monkeypatch, capsys):
+    """Test that when one code file has multiple links, only auto_generated ones are skipped."""
+    monkeypatch.chdir(git_repo)
+
+    # Create project structure
+    config = git_repo / "pyproject.toml"
+    config.write_text("""
+[tool.docsync]
+mode = "warn"
+require_links = ["src/**/*.py"]
+doc_paths = ["docs/**/*.md"]
+""")
+
+    src = git_repo / "src"
+    src.mkdir()
+    (src / "cli.py").write_text("def main(): pass")
+
+    docs = git_repo / "docs"
+    docs.mkdir()
+    (docs / "reference.md").write_text("# CLI Reference")
+    (docs / "tutorial.md").write_text("# Tutorial")
+
+    # Create TWO links for the same code file
+    # One is auto_generated, one is not
+    docsync = git_repo / ".docsync"
+    docsync.mkdir()
+    links = docsync / "links.toml"
+    links.write_text("""
+[[link]]
+code = "src/cli.py"
+docs = ["docs/reference.md"]
+auto_generated = true
+
+[[link]]
+code = "src/cli.py"
+docs = ["docs/tutorial.md"]
+""")
+
+    # Commit initial state
+    subprocess.run(["git", "add", "."], cwd=git_repo, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "commit", "-m", "Initial commit"],
+        cwd=git_repo,
+        check=True,
+        capture_output=True,
+    )
+
+    # Modify code file
+    (src / "cli.py").write_text("def main(): pass\ndef sub(): pass")
+
+    # Stage the change
+    subprocess.run(["git", "add", "src/cli.py"], cwd=git_repo, check=True, capture_output=True)
+
+    # Run check in JSON mode
+    cmd_check(Namespace(staged_files=None, format="json"))
+
+    captured = capsys.readouterr()
+    output = json.loads(captured.out)
+
+    # Should have 1 stale doc (tutorial.md) and 1 skipped (reference.md)
+    assert (
+        output["skipped_auto_generated"] == 1
+    ), f"Expected 1 skipped, got {output['skipped_auto_generated']}"
+    assert len(output["stale"]) == 1, f"Expected 1 stale, got {len(output['stale'])}"
+    assert output["stale"][0]["doc_target"] == "docs/tutorial.md"
+
+
+def test_auto_generated_with_section_links(git_repo, monkeypatch, capsys):
+    """Test auto_generated works correctly with section-specific links."""
+    monkeypatch.chdir(git_repo)
+
+    # Create project structure
+    config = git_repo / "pyproject.toml"
+    config.write_text("""
+[tool.docsync]
+mode = "warn"
+require_links = ["src/**/*.py"]
+doc_paths = ["docs/**/*.md"]
+""")
+
+    src = git_repo / "src"
+    src.mkdir()
+    (src / "auth.py").write_text("def login(): pass")
+
+    docs = git_repo / "docs"
+    docs.mkdir()
+    (docs / "api.md").write_text(
+        "# API\n\n## Authentication\n\nAuth docs here.\n\n## Other\n\nOther docs."
+    )
+
+    # Link to section, mark as auto_generated
+    docsync = git_repo / ".docsync"
+    docsync.mkdir()
+    links = docsync / "links.toml"
+    links.write_text("""
+[[link]]
+code = "src/auth.py"
+docs = ["docs/api.md#Authentication"]
+auto_generated = true
+""")
+
+    # Commit initial state
+    subprocess.run(["git", "add", "."], cwd=git_repo, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "commit", "-m", "Initial commit"],
+        cwd=git_repo,
+        check=True,
+        capture_output=True,
+    )
+
+    # Modify code
+    (src / "auth.py").write_text("def login(): pass\ndef logout(): pass")
+    subprocess.run(["git", "add", "src/auth.py"], cwd=git_repo, check=True, capture_output=True)
+
+    # Run check in JSON mode
+    cmd_check(Namespace(staged_files=None, format="json"))
+
+    captured = capsys.readouterr()
+    output = json.loads(captured.out)
+
+    # Section link should be skipped
+    assert output["skipped_auto_generated"] == 1
+    assert len(output["stale"]) == 0

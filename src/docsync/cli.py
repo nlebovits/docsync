@@ -576,9 +576,6 @@ def cmd_check(args: argparse.Namespace) -> int:
     # Load links to check auto_generated flag
     links = load_links(repo_root)
 
-    # Build mapping of code_file -> Link for quick lookup
-    code_to_link = {link.code: link for link in links}
-
     # Check each file
     stale_results = []
     skipped_auto_generated = 0
@@ -594,14 +591,22 @@ def cmd_check(args: argparse.Namespace) -> int:
         if config.transitive_depth > 0 and file_path in import_graph:
             transitive_imports = list(import_graph[file_path])
 
-        # Check if this code file's link is auto-generated
-        link = code_to_link.get(file_path)
-        if link and link.auto_generated:
-            skipped_auto_generated += len(doc_targets)
-            continue
-
         # Check staleness for each doc target (enriched)
         for doc_target_str in doc_targets:
+            # Check if this specific code→doc relationship is auto-generated
+            is_auto_generated = False
+            for link in links:
+                if (
+                    link.code == file_path
+                    and any(str(doc) == doc_target_str for doc in link.docs)
+                    and link.auto_generated
+                ):
+                    is_auto_generated = True
+                    skipped_auto_generated += 1
+                    break
+
+            if is_auto_generated:
+                continue
             target = LinkTarget.parse(doc_target_str)
             result = check_staleness_enriched(
                 repo_root,
@@ -680,9 +685,6 @@ def cmd_list_stale(args: argparse.Namespace) -> int:
     # Load links to check auto_generated flag
     links = load_links(repo_root)
 
-    # Build mapping of code_file -> Link for quick lookup
-    code_to_link = {link.code: link for link in links}
-
     # Check all code files in graph
     stale_results = []
     skipped_auto_generated = 0
@@ -695,13 +697,21 @@ def cmd_list_stale(args: argparse.Namespace) -> int:
         if config.transitive_depth > 0 and code_file in import_graph:
             transitive_imports = list(import_graph[code_file])
 
-        # Check if this code file's link is auto-generated
-        link = code_to_link.get(code_file)
-        if link and link.auto_generated:
-            skipped_auto_generated += len(doc_targets)
-            continue
-
         for doc_target_str in doc_targets:
+            # Check if this specific code→doc relationship is auto-generated
+            is_auto_generated = False
+            for link in links:
+                if (
+                    link.code == code_file
+                    and any(str(doc) == doc_target_str for doc in link.docs)
+                    and link.auto_generated
+                ):
+                    is_auto_generated = True
+                    skipped_auto_generated += 1
+                    break
+
+            if is_auto_generated:
+                continue
             target = LinkTarget.parse(doc_target_str)
             result = check_staleness_enriched(
                 repo_root,
