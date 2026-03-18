@@ -10,7 +10,7 @@ repos:
         stages: [commit-msg]
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.8.4
+    rev: v0.8.0
     hooks:
       # Run the formatter
       - id: ruff-format
