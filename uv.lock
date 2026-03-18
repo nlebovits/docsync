@@ -317,7 +317,7 @@ dev = [
     { name = "mkdocstrings", extras = ["python"], specifier = ">=1.0.3" },
     { name = "pytest", specifier = ">=8.0" },
     { name = "pytest-cov", specifier = ">=4.0" },
-    { name = "ruff", specifier = ">=0.4" },
+    { name = "ruff", specifier = ">=0.8.0" },
 ]
 
 [[package]]
