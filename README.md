@@ -69,6 +69,10 @@ menard coverage
 # Set up pre-commit hook
 # See: https://nlebovits.github.io/menard/getting-started/#pre-commit-setup
 pre-commit install
+
+# Optional: Find duplicate content with embeddings
+uv add menard[brevity]
+menard brevity --threshold 0.95
 ```
 
 ## License

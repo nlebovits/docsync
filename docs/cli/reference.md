@@ -734,6 +734,17 @@ menard brevity [--threshold N] [--format text|json] [--model NAME] [--no-cache]
 | `--model` | Embedding model name (default: `BAAI/bge-small-en-v1.5`) |
 | `--no-cache` | Skip cache and re-embed all sections |
 
+**Threshold guidance:**
+
+| Threshold | Use Case |
+|-----------|----------|
+| **0.95+** | Near-exact duplicates only (copy-paste detection) |
+| **0.90** | High-confidence duplicates (recommended starting point) |
+| **0.85** | Moderate similarity (more noise, more coverage) |
+| **0.80** | Loose matching (many false positives) |
+
+> **Tip:** Start with `--threshold 0.95` to find obvious duplicates, then lower gradually if needed.
+
 **Installation:** Requires the `[brevity]` optional dependency:
 
 ```bash
@@ -745,15 +756,15 @@ pip install fastembed
 **Example output (text):**
 
 ```bash
-$ menard brevity --threshold 0.85
+$ menard brevity --threshold 0.95
 
-Potential duplicates found (threshold: 0.85):
+Potential duplicates found (threshold: 0.95):
 
-  README.md#Quick Start ↔ docs/getting-started.md#Installation
-  Similarity: 0.92
+  README.md#License ↔ docs/index.md#License
+  Similarity: 1.00
 
-  docs/cli/reference.md#check ↔ docs/index.md#Track Doc Drift
-  Similarity: 0.87
+  README.md#Quick Start ↔ docs/getting-started.md#Quick Start
+  Similarity: 0.96
 ```
 
 **Example output (json):**
@@ -762,16 +773,16 @@ Potential duplicates found (threshold: 0.85):
 {
   "duplicates": [
     {
-      "source": "README.md#Quick Start",
-      "target": "docs/getting-started.md#Installation",
-      "similarity": 0.92,
-      "source_lines": [15, 30],
-      "target_lines": [1, 20]
+      "source": "README.md#License",
+      "target": "docs/index.md#License",
+      "similarity": 1.0,
+      "source_lines": [74, 77],
+      "target_lines": [43, 46]
     }
   ],
-  "threshold": 0.85,
+  "threshold": 0.95,
   "model": "BAAI/bge-small-en-v1.5",
-  "sections_analyzed": 24
+  "sections_analyzed": 87
 }
 ```
 
@@ -786,6 +797,22 @@ Potential duplicates found (threshold: 0.85):
 
 - `0` - No duplicates found
 - `1` - Duplicates found (advisory)
+
+**Expected duplicates:** Some duplicates are intentional:
+
+- **README ↔ docs/index.md** — Common pattern for docs sites to mirror README
+- **License sections** — Often duplicated across README, contributing guides
+- **Category headers ↔ child commands** — Section titles may match their content semantically
+
+Review duplicates in context—not all need consolidation.
+
+**Performance:**
+
+- **First run:** ~5-10 seconds (downloads model, generates embeddings)
+- **Cached runs:** ~1-2 seconds (loads from `.menard/embeddings_*.json`)
+- **Cache invalidation:** Automatic when doc content changes
+
+> **Note:** You may see an ONNX warning about GPU device discovery. This is harmless—fastembed falls back to CPU, which is fast enough for typical documentation sets.
 
 **When to use:** Periodic audits, after major doc restructuring, finding content drift.
 
