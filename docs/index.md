@@ -95,7 +95,7 @@ All output is designed for AI consumption. The `--format json` flag provides str
     "code_last_modified": "2026-03-17",
     "doc_last_modified": "2026-03-08",
     "commits_since": [{
-      "sha": "abc123",
+      "sha": "abc1234",
       "date": "2026-03-17",
       "message": "feat: add logout"
     }],
@@ -107,7 +107,7 @@ All output is designed for AI consumption. The `--format json` flag provides str
 }
 ```
 
-The structured `doc_target` includes exact line ranges for precision edits. `suggested_action` tells agents whether to "update", "create", or "review" the doc section.
+The structured `doc_target` includes exact line ranges for precision edits. `suggested_action` tells agents whether to "update" (section exists) or "create" (doc/section missing).
 
 ## License
 

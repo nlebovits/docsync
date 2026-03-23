@@ -100,7 +100,7 @@ When docs are stale, docsync shows detailed information to help you understand w
 - **Symbol changes**: Functions and classes added or removed (via AST analysis)
 - **Code diff**: The actual git diff (with `--show-diff` flag)
 - **Line range**: Exact lines to edit in the doc file
-- **Suggested action**: `update`, `create`, or `review`
+- **Suggested action**: `update` or `create`
 
 ```bash
 $ docsync list-stale

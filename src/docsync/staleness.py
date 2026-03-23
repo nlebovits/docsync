@@ -49,7 +49,7 @@ class StalenessResult:
     # Issue #34 fields
     line_range: tuple[int, int] | None = None  # (start, end) 1-indexed
     auto_generated: bool = False
-    suggested_action: str = "update"  # "update", "create", "review"
+    suggested_action: str = "update"  # "update" or "create"
     severity: str | None = None  # Requires #29, always None for now
 
     # Internal: store doc file separately for structured output
@@ -84,33 +84,6 @@ class StalenessResult:
         # Add optional enriched fields
         if self.last_code_commit:
             result["last_code_commit"] = self.last_code_commit
-        if self.commits_since:
-            result["commits_since"] = [c.to_dict() for c in self.commits_since]
-        if self.symbols_added:
-            result["symbols_added"] = self.symbols_added
-        if self.symbols_removed:
-            result["symbols_removed"] = self.symbols_removed
-        if include_diff and self.code_diff:
-            result["code_diff"] = self.code_diff
-
-        return result
-
-    # Legacy method for backwards-compatible text output
-    def to_dict_legacy(self, include_diff: bool = False) -> dict[str, Any]:
-        """Legacy dict format for text output compatibility."""
-        result: dict[str, Any] = {
-            "code_file": self.code_file,
-            "doc_target": self.doc_target,
-            "reason": self.reason,
-            "section": self.section,
-        }
-
-        if self.last_code_change:
-            result["last_code_change"] = self.last_code_change
-        if self.last_code_commit:
-            result["last_code_commit"] = self.last_code_commit
-        if self.last_doc_update:
-            result["last_doc_update"] = self.last_doc_update
         if self.commits_since:
             result["commits_since"] = [c.to_dict() for c in self.commits_since]
         if self.symbols_added:
@@ -553,15 +526,13 @@ def check_staleness_enriched(
         line_range = parse_markdown_section(doc_path, doc_target.section)
 
     # Determine suggested action (issue #34)
+    # Note: Only "update" and "create" are meaningful since this function
+    # is only called for stale results (fresh docs are filtered out by CLI)
     suggested_action = "update"
     if not (repo_root / doc_target.file).exists():
         suggested_action = "create"
     elif doc_target.section and line_range is None:
         suggested_action = "create"  # Section doesn't exist
-    elif is_stale:
-        suggested_action = "update"
-    else:
-        suggested_action = "review"  # Doc exists and is fresh, just review
 
     result = StalenessResult(
         is_stale=is_stale,
