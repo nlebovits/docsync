@@ -35,6 +35,7 @@ class Link:
     docs: list[LinkTarget]
     note: str | None = None
     auto_generated: bool = False
+    ignore: bool = False  # If True, skip staleness checks for this link
 
 
 def load_links(repo_root: Path) -> list[Link]:
@@ -69,8 +70,17 @@ def load_links(repo_root: Path) -> list[Link]:
 
         # Parse doc targets
         doc_targets = [LinkTarget.parse(doc) for doc in docs]
+        ignore = entry.get("ignore", False)
 
-        links.append(Link(code=code, docs=doc_targets, note=note, auto_generated=auto_generated))
+        links.append(
+            Link(
+                code=code,
+                docs=doc_targets,
+                note=note,
+                auto_generated=auto_generated,
+                ignore=ignore,
+            )
+        )
 
     return links
 
@@ -185,6 +195,9 @@ def generate_links_toml(links: list[Link]) -> str:
 
         if link.auto_generated:
             lines.append("auto_generated = true")
+
+        if link.ignore:
+            lines.append("ignore = true")
 
         if link.note:
             lines.append(f'note = "{link.note}"')

@@ -10,7 +10,8 @@ from docsync.config import load_config
 from docsync.donttouch import check_protections, load_donttouch
 from docsync.graph import build_docsync_graph, get_linked_docs
 from docsync.imports import build_import_graph
-from docsync.staleness import check_staleness_enriched, is_doc_stale
+from docsync.reviewed import Review, clean_reviews, load_reviews, save_review
+from docsync.staleness import check_staleness_enriched, get_last_commit, is_doc_stale
 from docsync.toml_links import (
     Link,
     LinkTarget,
@@ -524,6 +525,8 @@ def _format_staleness_text(result, show_diff: bool = False) -> str:
 
 def cmd_check(args: argparse.Namespace) -> int:
     """Check if docs linked to staged/specified files are stale (CI/pre-commit mode)."""
+    from docsync.reviewed import find_review, is_review_valid
+
     repo_root = Path.cwd()
     config = load_config(repo_root)
 
@@ -573,12 +576,17 @@ def cmd_check(args: argparse.Namespace) -> int:
     if diff_lines != 30:  # Non-default value implies show_diff
         show_diff = True
 
-    # Load links to check auto_generated flag
+    # Load links to check auto_generated and ignore flags
     links = load_links(repo_root)
+
+    # Load reviews for checking reviewed state
+    reviews = load_reviews(repo_root)
 
     # Check each file
     stale_results = []
     skipped_auto_generated = 0
+    skipped_reviewed = 0
+    skipped_ignored = 0
 
     for file_path in files_to_check:
         doc_targets = get_linked_docs(file_path, graph, config)
@@ -593,20 +601,30 @@ def cmd_check(args: argparse.Namespace) -> int:
 
         # Check staleness for each doc target (enriched)
         for doc_target_str in doc_targets:
-            # Check if this specific code→doc relationship is auto-generated
+            # Check if this specific code→doc relationship is auto-generated or ignored
             is_auto_generated = False
+            is_ignored = False
             for link in links:
-                if (
-                    link.code == file_path
-                    and any(str(doc) == doc_target_str for doc in link.docs)
-                    and link.auto_generated
-                ):
-                    is_auto_generated = True
-                    skipped_auto_generated += 1
+                if link.code == file_path and any(str(doc) == doc_target_str for doc in link.docs):
+                    if link.auto_generated:
+                        is_auto_generated = True
+                        skipped_auto_generated += 1
+                    if link.ignore:
+                        is_ignored = True
+                        skipped_ignored += 1
                     break
 
-            if is_auto_generated:
+            if is_auto_generated or is_ignored:
                 continue
+
+            # Check if this has been reviewed and review is still valid
+            review = find_review(reviews, file_path, doc_target_str)
+            if review:
+                current_commit = get_last_commit(repo_root, file_path)
+                if current_commit and is_review_valid(review, current_commit[:7]):
+                    skipped_reviewed += 1
+                    continue
+
             target = LinkTarget.parse(doc_target_str)
             result = check_staleness_enriched(
                 repo_root,
@@ -625,34 +643,52 @@ def cmd_check(args: argparse.Namespace) -> int:
         # Check passes - but hint if there are stale docs elsewhere
         if args.format != "json":
             total_stale = _count_all_stale_docs(repo_root, config, graph, import_graph)
+            skip_parts = []
+            if skipped_auto_generated > 0:
+                skip_parts.append(f"{skipped_auto_generated} auto-generated")
+            if skipped_reviewed > 0:
+                skip_parts.append(f"{skipped_reviewed} reviewed")
+            if skipped_ignored > 0:
+                skip_parts.append(f"{skipped_ignored} ignored")
+            skip_msg = f" ({', '.join(skip_parts)} skipped)" if skip_parts else ""
+
             if total_stale > 0:
-                print("✓ Staged files have up-to-date documentation")
-                if skipped_auto_generated > 0:
-                    print(f"  ({skipped_auto_generated} auto-generated docs skipped)")
+                print(f"✓ Staged files have up-to-date documentation{skip_msg}")
                 print(
                     f"  Hint: {total_stale} stale doc(s) exist elsewhere. "
                     "Run 'docsync list-stale' for full audit."
                 )
             else:
-                print("✓ All documentation is up to date")
-                if skipped_auto_generated > 0:
-                    print(f"  ({skipped_auto_generated} auto-generated docs skipped)")
+                print(f"✓ All documentation is up to date{skip_msg}")
         else:
-            result = {"stale": [], "skipped_auto_generated": skipped_auto_generated}
+            result = {
+                "stale": [],
+                "skipped_auto_generated": skipped_auto_generated,
+                "skipped_reviewed": skipped_reviewed,
+                "skipped_ignored": skipped_ignored,
+            }
             print(json.dumps(result, indent=2))
         return 0
 
     # Report stale docs
     if args.format == "json":
         stale_dicts = [r.to_dict(include_diff=show_diff) for r in stale_results]
-        result = {"stale": stale_dicts, "skipped_auto_generated": skipped_auto_generated}
+        result = {
+            "stale": stale_dicts,
+            "skipped_auto_generated": skipped_auto_generated,
+            "skipped_reviewed": skipped_reviewed,
+            "skipped_ignored": skipped_ignored,
+        }
         print(json.dumps(result, indent=2))
     else:
-        skip_msg = (
-            f" ({skipped_auto_generated} auto-generated docs skipped)"
-            if skipped_auto_generated > 0
-            else ""
-        )
+        skip_parts = []
+        if skipped_auto_generated > 0:
+            skip_parts.append(f"{skipped_auto_generated} auto-generated")
+        if skipped_reviewed > 0:
+            skip_parts.append(f"{skipped_reviewed} reviewed")
+        if skipped_ignored > 0:
+            skip_parts.append(f"{skipped_ignored} ignored")
+        skip_msg = f" ({', '.join(skip_parts)} skipped)" if skip_parts else ""
         print(f"❌ Found {len(stale_results)} stale documentation targets{skip_msg}:\n")
         for result in stale_results:
             print(_format_staleness_text(result, show_diff=show_diff))
@@ -665,6 +701,8 @@ def cmd_check(args: argparse.Namespace) -> int:
 
 def cmd_list_stale(args: argparse.Namespace) -> int:
     """List all stale documentation across the entire repository (audit mode)."""
+    from docsync.reviewed import find_review, is_review_valid
+
     repo_root = Path.cwd()
     config = load_config(repo_root)
 
@@ -683,12 +721,17 @@ def cmd_list_stale(args: argparse.Namespace) -> int:
     if diff_lines != 30:  # Non-default value implies show_diff
         show_diff = True
 
-    # Load links to check auto_generated flag
+    # Load links to check auto_generated and ignore flags
     links = load_links(repo_root)
+
+    # Load reviews for checking reviewed state
+    reviews = load_reviews(repo_root)
 
     # Check all code files in graph
     stale_results = []
     skipped_auto_generated = 0
+    skipped_reviewed = 0
+    skipped_ignored = 0
     code_files = {k for k in graph if not any(k.endswith(ext) for ext in [".md", ".rst"])}
 
     for code_file in code_files:
@@ -699,20 +742,30 @@ def cmd_list_stale(args: argparse.Namespace) -> int:
             transitive_imports = list(import_graph[code_file])
 
         for doc_target_str in doc_targets:
-            # Check if this specific code→doc relationship is auto-generated
+            # Check if this specific code→doc relationship is auto-generated or ignored
             is_auto_generated = False
+            is_ignored = False
             for link in links:
-                if (
-                    link.code == code_file
-                    and any(str(doc) == doc_target_str for doc in link.docs)
-                    and link.auto_generated
-                ):
-                    is_auto_generated = True
-                    skipped_auto_generated += 1
+                if link.code == code_file and any(str(doc) == doc_target_str for doc in link.docs):
+                    if link.auto_generated:
+                        is_auto_generated = True
+                        skipped_auto_generated += 1
+                    if link.ignore:
+                        is_ignored = True
+                        skipped_ignored += 1
                     break
 
-            if is_auto_generated:
+            if is_auto_generated or is_ignored:
                 continue
+
+            # Check if this has been reviewed and review is still valid
+            review = find_review(reviews, code_file, doc_target_str)
+            if review:
+                current_commit = get_last_commit(repo_root, code_file)
+                if current_commit and is_review_valid(review, current_commit[:7]):
+                    skipped_reviewed += 1
+                    continue
+
             target = LinkTarget.parse(doc_target_str)
             result = check_staleness_enriched(
                 repo_root,
@@ -729,7 +782,12 @@ def cmd_list_stale(args: argparse.Namespace) -> int:
 
     if args.format == "json":
         stale_dicts = [r.to_dict(include_diff=show_diff) for r in stale_results]
-        result = {"stale": stale_dicts, "skipped_auto_generated": skipped_auto_generated}
+        result = {
+            "stale": stale_dicts,
+            "skipped_auto_generated": skipped_auto_generated,
+            "skipped_reviewed": skipped_reviewed,
+            "skipped_ignored": skipped_ignored,
+        }
         print(json.dumps(result, indent=2))
     elif args.format == "paths":
         # Just print unique doc paths
@@ -738,18 +796,24 @@ def cmd_list_stale(args: argparse.Namespace) -> int:
             print(doc_path)
     else:
         if not stale_results:
-            skip_msg = (
-                f" ({skipped_auto_generated} auto-generated docs skipped)"
-                if skipped_auto_generated > 0
-                else ""
-            )
+            skip_parts = []
+            if skipped_auto_generated > 0:
+                skip_parts.append(f"{skipped_auto_generated} auto-generated")
+            if skipped_reviewed > 0:
+                skip_parts.append(f"{skipped_reviewed} reviewed")
+            if skipped_ignored > 0:
+                skip_parts.append(f"{skipped_ignored} ignored")
+            skip_msg = f" ({', '.join(skip_parts)} skipped)" if skip_parts else ""
             print(f"✓ No stale documentation{skip_msg}")
         else:
-            skip_msg = (
-                f" ({skipped_auto_generated} auto-generated docs skipped)"
-                if skipped_auto_generated > 0
-                else ""
-            )
+            skip_parts = []
+            if skipped_auto_generated > 0:
+                skip_parts.append(f"{skipped_auto_generated} auto-generated")
+            if skipped_reviewed > 0:
+                skip_parts.append(f"{skipped_reviewed} reviewed")
+            if skipped_ignored > 0:
+                skip_parts.append(f"{skipped_ignored} ignored")
+            skip_msg = f" ({', '.join(skip_parts)} skipped)" if skip_parts else ""
             print(f"Found {len(stale_results)} stale documentation targets{skip_msg}:\n")
             for result in stale_results:
                 print(_format_staleness_text(result, show_diff=show_diff))
@@ -1059,6 +1123,299 @@ def cmd_skills(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_fix_mark_reviewed(args: argparse.Namespace) -> int:
+    """Mark a code→doc relationship as reviewed."""
+    from datetime import UTC, datetime
+
+    repo_root = Path.cwd()
+
+    # Get current commit for code file
+    current_commit = get_last_commit(repo_root, args.code)
+    if not current_commit:
+        if args.format == "json":
+            print(json.dumps({"error": f"Could not get commit for {args.code}"}))
+        else:
+            print(f"❌ Could not get commit for {args.code}")
+        return 1
+
+    # Create and save review
+    review = Review(
+        code_file=args.code,
+        doc_target=args.doc,
+        reviewed_at=datetime.now(UTC).isoformat(),
+        code_commit_at_review=current_commit[:7],
+        reviewed_by=args.reviewed_by,
+    )
+    save_review(repo_root, review)
+
+    if args.format == "json":
+        print(
+            json.dumps(
+                {
+                    "status": "created",
+                    "review": {
+                        "code_file": review.code_file,
+                        "doc_target": review.doc_target,
+                        "code_commit_at_review": review.code_commit_at_review,
+                        "reviewed_by": review.reviewed_by,
+                    },
+                }
+            )
+        )
+    else:
+        print(f"✓ Marked {args.code} → {args.doc} as reviewed")
+        print(f"  Commit: {review.code_commit_at_review}")
+
+    return 0
+
+
+def cmd_fix_ignore(args: argparse.Namespace) -> int:
+    """Add ignore=true to a link in links.toml."""
+    repo_root = Path.cwd()
+
+    links = load_links(repo_root)
+    if not links:
+        if args.format == "json":
+            print(json.dumps({"error": "No links found"}))
+        else:
+            print("❌ No links found in .docsync/links.toml")
+        return 1
+
+    # Find the matching link
+    found = False
+    for link in links:
+        if link.code == args.code and any(str(d) == args.doc for d in link.docs):
+            link.ignore = True
+            found = True
+            break
+
+    if not found:
+        if args.format == "json":
+            print(json.dumps({"error": f"Link not found: {args.code} → {args.doc}"}))
+        else:
+            print(f"❌ Link not found: {args.code} → {args.doc}")
+        return 1
+
+    # Write back to links.toml
+    links_file = repo_root / ".docsync" / "links.toml"
+    links_file.write_text(generate_links_toml(links))
+
+    if args.format == "json":
+        print(json.dumps({"status": "ignored", "code": args.code, "doc": args.doc}))
+    else:
+        print(f"✓ Added ignore=true to {args.code} → {args.doc}")
+
+    return 0
+
+
+def cmd_clean_reviewed(args: argparse.Namespace) -> int:
+    """Clean up reviewed state."""
+    repo_root = Path.cwd()
+
+    removed = clean_reviews(repo_root, remove_all=args.all)
+
+    if args.format == "json":
+        print(json.dumps({"removed": removed}))
+    else:
+        if removed > 0:
+            print(f"✓ Removed {removed} review(s)")
+        else:
+            print("No reviews to clean")
+
+    return 0
+
+
+def _open_editor_at_line(file_path: Path, line: int) -> bool:
+    """Open $EDITOR at the specified line. Returns True if successful."""
+    import os
+    import subprocess as sp
+
+    editor = os.environ.get("EDITOR", os.environ.get("VISUAL", "vi"))
+
+    # Common editor line number syntax
+    if "vim" in editor or "vi" in editor or "nvim" in editor:
+        cmd = [editor, f"+{line}", str(file_path)]
+    elif "code" in editor or "vscode" in editor:
+        cmd = [editor, "--goto", f"{file_path}:{line}"]
+    elif "nano" in editor or "emacs" in editor:
+        cmd = [editor, f"+{line}", str(file_path)]
+    else:
+        # Generic fallback - just open the file
+        cmd = [editor, str(file_path)]
+
+    try:
+        result = sp.run(cmd)
+        return result.returncode == 0
+    except Exception as e:
+        print(f"  ❌ Could not open editor: {e}")
+        return False
+
+
+def cmd_fix_interactive(args: argparse.Namespace) -> int:
+    """Interactive mode to resolve stale documentation."""
+    from datetime import UTC, datetime
+
+    from docsync.reviewed import find_review, is_review_valid
+
+    repo_root = Path.cwd()
+    config = load_config(repo_root)
+
+    if config is None:
+        print("⚠️  docsync not configured")
+        return 1
+
+    graph = build_docsync_graph(repo_root, config)
+    if not graph:
+        print("⚠️  No links defined in .docsync/links.toml")
+        return 0
+
+    import_graph = {}
+    if config.transitive_depth > 0:
+        import_graph = build_import_graph(repo_root)
+
+    # Load links and reviews
+    links = load_links(repo_root)
+    reviews = load_reviews(repo_root)
+
+    # Collect stale items (similar to list-stale but without skipping reviewed)
+    stale_items = []
+    code_files = {k for k in graph if not any(k.endswith(ext) for ext in [".md", ".rst"])}
+
+    for code_file in code_files:
+        doc_targets = get_linked_docs(code_file, graph, config)
+
+        transitive_imports = []
+        if config.transitive_depth > 0 and code_file in import_graph:
+            transitive_imports = list(import_graph[code_file])
+
+        for doc_target_str in doc_targets:
+            # Skip auto-generated and ignored
+            skip_this = False
+            for link in links:
+                if (
+                    link.code == code_file
+                    and any(str(doc) == doc_target_str for doc in link.docs)
+                    and (link.auto_generated or link.ignore)
+                ):
+                    skip_this = True
+                    break
+            if skip_this:
+                continue
+
+            # Skip if already reviewed and valid
+            review = find_review(reviews, code_file, doc_target_str)
+            if review:
+                current_commit = get_last_commit(repo_root, code_file)
+                if current_commit and is_review_valid(review, current_commit[:7]):
+                    continue
+
+            target = LinkTarget.parse(doc_target_str)
+            result = check_staleness_enriched(
+                repo_root,
+                code_file,
+                target,
+                transitive_imports,
+                include_diff=False,
+                auto_generated=False,
+            )
+
+            if result.is_stale:
+                stale_items.append(result)
+
+    if not stale_items:
+        print("✓ No stale documentation to fix")
+        return 0
+
+    print(f"Found {len(stale_items)} stale documentation target(s)\n")
+
+    # Process each stale item interactively
+    for i, item in enumerate(stale_items, 1):
+        print(f"[{i}/{len(stale_items)}] Stale: {item.doc_target}")
+        print(f"  Code: {item.code_file}")
+        if item.symbols_added or item.symbols_removed:
+            changes = []
+            if item.symbols_added:
+                changes.append(f"+{', '.join(item.symbols_added)}")
+            if item.symbols_removed:
+                changes.append(f"-{', '.join(item.symbols_removed)}")
+            print(f"  Changed: {', '.join(changes)}")
+        print()
+        print("  [u] Update section (opens editor)")
+        print("  [m] Mark as reviewed")
+        print("  [s] Skip")
+        print("  [i] Add to ignore list")
+        print()
+
+        while True:
+            try:
+                choice = input("  Choice: ").strip().lower()
+            except (EOFError, KeyboardInterrupt):
+                print("\n\nAborted.")
+                return 1
+
+            if choice == "u":
+                # Open editor at the section
+                doc_path = repo_root / item.doc_target.split("#")[0]
+                line = item.line_range[0] if item.line_range else 1
+                if _open_editor_at_line(doc_path, line):
+                    print("  ✓ Editor closed")
+                    # After editing, mark as reviewed
+                    current_commit = get_last_commit(repo_root, item.code_file)
+                    if current_commit:
+                        review = Review(
+                            code_file=item.code_file,
+                            doc_target=item.doc_target,
+                            reviewed_at=datetime.now(UTC).isoformat(),
+                            code_commit_at_review=current_commit[:7],
+                            reviewed_by="user",
+                        )
+                        save_review(repo_root, review)
+                        print("  ✓ Marked as reviewed")
+                break
+
+            elif choice == "m":
+                # Mark as reviewed
+                current_commit = get_last_commit(repo_root, item.code_file)
+                if current_commit:
+                    review = Review(
+                        code_file=item.code_file,
+                        doc_target=item.doc_target,
+                        reviewed_at=datetime.now(UTC).isoformat(),
+                        code_commit_at_review=current_commit[:7],
+                        reviewed_by="user",
+                    )
+                    save_review(repo_root, review)
+                    print("  ✓ Marked as reviewed")
+                else:
+                    print("  ❌ Could not get commit for code file")
+                break
+
+            elif choice == "s":
+                print("  → Skipped")
+                break
+
+            elif choice == "i":
+                # Add ignore=true to the link
+                for link in links:
+                    if link.code == item.code_file and any(
+                        str(d) == item.doc_target for d in link.docs
+                    ):
+                        link.ignore = True
+                        break
+                links_file = repo_root / ".docsync" / "links.toml"
+                links_file.write_text(generate_links_toml(links))
+                print("  ✓ Added to ignore list")
+                break
+
+            else:
+                print("  Invalid choice. Enter u, m, s, or i.")
+
+        print()
+
+    print("Done!")
+    return 0
+
+
 def main() -> int:
     """Main CLI entry point."""
     parser = argparse.ArgumentParser(
@@ -1166,6 +1523,54 @@ def main() -> int:
         "--format", choices=["text", "json"], default="text", help="Output format"
     )
 
+    # fix (interactive)
+    subparsers.add_parser(
+        "fix",
+        help="Interactive mode to resolve stale documentation",
+        description="Interactively resolve stale documentation. "
+        "For each stale item, choose to update, mark as reviewed, skip, or ignore.",
+    )
+
+    # fix mark-reviewed
+    fix_mark_parser = subparsers.add_parser(
+        "fix-mark-reviewed",
+        help="Mark a code→doc relationship as reviewed",
+        description="Mark documentation as reviewed at current code commit. "
+        "The review will be valid until the code file changes.",
+    )
+    fix_mark_parser.add_argument("--code", required=True, help="Code file path")
+    fix_mark_parser.add_argument("--doc", required=True, help="Doc target (file#section)")
+    fix_mark_parser.add_argument(
+        "--reviewed-by", default="user", help="Reviewer name (default: user)"
+    )
+    fix_mark_parser.add_argument(
+        "--format", choices=["text", "json"], default="text", help="Output format"
+    )
+
+    # fix ignore
+    fix_ignore_parser = subparsers.add_parser(
+        "fix-ignore",
+        help="Permanently ignore a code→doc relationship",
+        description="Add ignore=true to a link in links.toml. "
+        "This permanently skips staleness checks for this relationship.",
+    )
+    fix_ignore_parser.add_argument("--code", required=True, help="Code file path")
+    fix_ignore_parser.add_argument("--doc", required=True, help="Doc target (file#section)")
+    fix_ignore_parser.add_argument(
+        "--format", choices=["text", "json"], default="text", help="Output format"
+    )
+
+    # clean-reviewed
+    clean_reviewed_parser = subparsers.add_parser(
+        "clean-reviewed",
+        help="Clean up reviewed state",
+        description="Remove orphaned reviews (for deleted files) or all reviews.",
+    )
+    clean_reviewed_parser.add_argument("--all", action="store_true", help="Remove all reviews")
+    clean_reviewed_parser.add_argument(
+        "--format", choices=["text", "json"], default="text", help="Output format"
+    )
+
     args = parser.parse_args()
 
     if not args.command:
@@ -1186,6 +1591,10 @@ def main() -> int:
         "check-protected": cmd_check_protected,
         "list-protected": cmd_list_protected,
         "skills": cmd_skills,
+        "fix": cmd_fix_interactive,
+        "fix-mark-reviewed": cmd_fix_mark_reviewed,
+        "fix-ignore": cmd_fix_ignore,
+        "clean-reviewed": cmd_clean_reviewed,
     }
 
     return commands[args.command](args)

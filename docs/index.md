@@ -73,6 +73,13 @@ docsync coverage
 # Check for stale docs (JSON output for agents)
 docsync list-stale --format json
 
+# Fix stale docs interactively
+docsync fix
+
+# Or use primitives for agent automation
+docsync fix-mark-reviewed --code src/auth.py --doc docs/api.md#Auth
+docsync fix-ignore --code src/auth.py --doc docs/api.md#Auth
+
 # Set up pre-commit hook
 pre-commit install
 ```
