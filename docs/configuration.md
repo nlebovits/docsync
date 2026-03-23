@@ -45,7 +45,15 @@ docs = ["docs/models.md"]
 code = "src/cli.py"
 docs = ["docs/reference/cli.md"]
 auto_generated = true
+
+# Permanently ignore staleness (e.g., intentionally outdated)
+[[link]]
+code = "src/legacy.py"
+docs = ["docs/legacy.md"]
+ignore = true
 ```
+
+The `ignore` flag permanently skips staleness checks for a link. Unlike `auto_generated`, this is for cases where you've deliberately decided not to keep docs in sync. Use `docsync fix-ignore` to add this flag interactively.
 
 Section-level links are more precise. When you change `src/auth.py`, only the Authentication section needs updating, not the entire 500-line doc file.
 
@@ -196,6 +204,10 @@ Validation catches typos and missing sections. Coverage shows what percentage of
 ```bash
 docsync check           # Pre-commit: validate links + check staged files for stale docs
 docsync list-stale      # Audit: list ALL stale docs across entire repo
+docsync fix             # Interactive mode: review/update/mark/ignore stale docs
+docsync fix-mark-reviewed --code FILE --doc TARGET  # Mark as reviewed (ephemeral)
+docsync fix-ignore --code FILE --doc TARGET         # Permanently ignore link
+docsync clean-reviewed  # Remove orphaned review records
 ```
 
 The `check` command runs during pre-commit and performs two validations:

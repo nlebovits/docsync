@@ -207,3 +207,44 @@ def test_generate_links_toml():
     assert 'docs = ["docs/api.md"]' in toml_content
     assert 'code = "src/models/user.py"' in toml_content
     assert 'note = "Manual link for complex model"' in toml_content
+
+
+def test_load_links_with_ignore():
+    """Test loading links with ignore flag."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        repo_root = Path(tmpdir)
+        docsync_dir = repo_root / ".docsync"
+        docsync_dir.mkdir()
+
+        links_file = docsync_dir / "links.toml"
+        links_file.write_text(
+            """
+[[link]]
+code = "src/auth.py"
+docs = ["docs/api.md"]
+
+[[link]]
+code = "src/generated.py"
+docs = ["docs/generated.md"]
+ignore = true
+"""
+        )
+
+        links = load_links(repo_root)
+        assert len(links) == 2
+        assert links[0].ignore is False  # default
+        assert links[1].ignore is True
+
+
+def test_generate_links_toml_with_ignore():
+    """Test generating TOML with ignore flag."""
+    links = [
+        Link(code="src/auth.py", docs=[LinkTarget(file="docs/api.md")]),
+        Link(code="src/generated.py", docs=[LinkTarget(file="docs/gen.md")], ignore=True),
+    ]
+
+    toml_content = generate_links_toml(links)
+
+    assert "ignore = true" in toml_content
+    # Should NOT have ignore = false for non-ignored links
+    assert "ignore = false" not in toml_content
