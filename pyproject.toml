@@ -13,6 +13,9 @@ dependencies = [
 [project.scripts]
 menard = "menard.cli:main"
 
+[project.optional-dependencies]
+brevity = ["fastembed>=0.7", "numpy>=1.24"]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
@@ -59,10 +62,12 @@ known-first-party = ["menard"]
 [dependency-groups]
 dev = [
     "commitizen>=4.13.9",
+    "fastembed>=0.7.4",
     "mkdocs>=1.6.1",
     "mkdocs-click>=0.9.0",
     "mkdocs-material>=9.7.5",
     "mkdocstrings[python]>=1.0.3",
+    "numpy>=1.24",  # For testing duplicates module
     "pytest>=8.0",
     "pytest-cov>=4.0",
     "ruff==0.15.6",

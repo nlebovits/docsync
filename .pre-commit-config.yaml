@@ -47,3 +47,12 @@ repos:
         language: system
         pass_filenames: false
         always_run: true
+
+      # Find duplicate content (advisory - won't block commits)
+      - id: menard-brevity
+        name: menard-brevity (advisory)
+        description: Find semantically similar documentation sections
+        entry: bash -c 'uv run menard brevity --threshold 0.95 || true'
+        language: system
+        pass_filenames: false
+        types: [markdown]

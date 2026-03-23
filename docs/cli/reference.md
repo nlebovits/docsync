@@ -711,6 +711,145 @@ Later, if `cli.py` changes again (a real feature), it will be flagged stale agai
 
 ---
 
+## Duplicate Detection
+
+### brevity
+
+Find semantically similar documentation sections using local embeddings. Requires `menard[brevity]` optional dependency.
+
+```bash
+menard brevity [--threshold N] [--format text|json] [--model NAME] [--no-cache]
+```
+
+**Purpose:** Discover potential duplicate content across documentation. This is a **discovery tool, not an enforcer**—it surfaces potential duplicates for human review without blocking commits.
+
+**Options:**
+
+| Option | Description |
+|--------|-------------|
+| `--threshold` | Minimum similarity score to report (default: 0.8) |
+| `--format` | Output format: `text` or `json` (default: `text`) |
+| `--model` | Embedding model name (default: `BAAI/bge-small-en-v1.5`) |
+| `--no-cache` | Skip cache and re-embed all sections |
+
+**Threshold guidance:**
+
+| Threshold | Use Case |
+|-----------|----------|
+| **0.95+** | Near-exact duplicates only (copy-paste detection) |
+| **0.90** | High-confidence duplicates (recommended starting point) |
+| **0.85** | Moderate similarity (more noise, more coverage) |
+| **0.80** | Loose matching (many false positives) |
+
+> **Tip:** Start with `--threshold 0.95` to find obvious duplicates, then lower gradually if needed.
+
+**Installation:** Requires the `[brevity]` optional dependency:
+
+```bash
+uv add menard[brevity]
+# or
+pip install fastembed
+```
+
+**Example output (text):**
+
+```bash
+$ menard brevity --threshold 0.95
+
+Potential duplicates found (threshold: 0.95):
+
+  README.md#License ↔ docs/index.md#License
+  Similarity: 1.00
+
+  README.md#Quick Start ↔ docs/getting-started.md#Quick Start
+  Similarity: 0.96
+```
+
+**Example output (json):**
+
+```json
+{
+  "duplicates": [
+    {
+      "source": "README.md#License",
+      "target": "docs/index.md#License",
+      "similarity": 1.0,
+      "source_lines": [74, 77],
+      "target_lines": [43, 46]
+    }
+  ],
+  "threshold": 0.95,
+  "model": "BAAI/bge-small-en-v1.5",
+  "sections_analyzed": 87
+}
+```
+
+**How it works:**
+
+1. **Chunk by heading** — Uses `sections.py` to extract markdown sections
+2. **Embed with fastembed** — Generates embeddings locally (no API keys needed)
+3. **Cache embeddings** — Stores in `.menard/` using content-hash invalidation
+4. **Pairwise similarity** — Compares all section pairs, flags those above threshold
+
+**Exit codes:**
+
+- `0` - No duplicates found
+- `1` - Duplicates found (advisory)
+
+**Expected duplicates:** Some duplicates are intentional:
+
+- **README ↔ docs/index.md** — Common pattern for docs sites to mirror README
+- **License sections** — Often duplicated across README, contributing guides
+- **Category headers ↔ child commands** — Section titles may match their content semantically
+
+Review duplicates in context—not all need consolidation.
+
+**Performance:**
+
+- **First run:** ~5-10 seconds (downloads model, generates embeddings)
+- **Cached runs:** ~1-2 seconds (loads from `.menard/embeddings_*.json`)
+- **Cache invalidation:** Automatic when doc content changes
+
+> **Note:** You may see an ONNX warning about GPU device discovery. This is harmless—fastembed falls back to CPU, which is fast enough for typical documentation sets.
+
+**When to use:** Periodic audits, after major doc restructuring, finding content drift.
+
+**Configuration:**
+
+Exclude files or sections from duplicate detection in `pyproject.toml`:
+
+```toml
+[tool.menard]
+doc_paths = ["docs/**/*.md", "README.md"]
+
+# Exclude from brevity checks (glob patterns)
+brevity_exclude = [
+    "CLAUDE.md",           # Exclude entire file
+    "*#License",           # Exclude all License sections
+    "docs/changelog.md",   # Changelog has intentional repetition
+]
+```
+
+**Pre-commit integration:**
+
+Add to `.pre-commit-config.yaml` for automatic checks:
+
+```yaml
+- repo: local
+  hooks:
+    - id: menard-brevity
+      name: menard-brevity (advisory)
+      description: Find semantically similar documentation sections
+      entry: bash -c 'uv run menard brevity --threshold 0.95 || true'
+      language: system
+      pass_filenames: false
+      types: [markdown]
+```
+
+The `|| true` makes it advisory—reports duplicates without blocking commits.
+
+---
+
 ## Utility Commands
 
 ### clear-cache
