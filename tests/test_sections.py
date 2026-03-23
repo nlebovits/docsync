@@ -246,3 +246,39 @@ Config goes here.
         assert "# Install the package" in content
         assert "# Run the tool" in content
         assert "## Configuration" not in content
+
+
+def test_list_sections_with_code_fences():
+    """Test that list_sections ignores # inside code blocks."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        doc_file = Path(tmpdir) / "test.md"
+        doc_file.write_text(
+            """# Title
+
+## Quick Start
+
+Here's how to get started:
+
+```bash
+# This is a comment, not a heading
+pip install mypackage
+
+# Another comment
+mypackage run
+```
+
+## Configuration
+
+Configure your settings.
+"""
+        )
+
+        sections = list_sections(doc_file)
+
+        # Should only include real headings, not # comments in code blocks
+        assert "Quick Start" in sections
+        assert "Configuration" in sections
+        # These should NOT appear - they're inside code fences
+        assert "This is a comment, not a heading" not in sections
+        assert "Another comment" not in sections
+        assert len(sections) == 2

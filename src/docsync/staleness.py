@@ -37,7 +37,7 @@ class StalenessResult:
     doc_target: str
     section: str | None = None
 
-    # Enriched fields (issues #28, #31, #33)
+    # Enriched fields (issues #28, #31, #33, #34)
     last_code_change: str | None = None  # ISO date
     last_code_commit: str | None = None  # SHA
     last_doc_update: str | None = None  # ISO date
@@ -46,22 +46,44 @@ class StalenessResult:
     symbols_removed: list[str] = field(default_factory=list)
     code_diff: str | None = None  # Raw diff (only if requested)
 
+    # Issue #34 fields
+    line_range: tuple[int, int] | None = None  # (start, end) 1-indexed
+    auto_generated: bool = False
+    suggested_action: str = "update"  # "update" or "create"
+    severity: str | None = None  # Requires #29, always None for now
+
+    # Internal: store doc file separately for structured output
+    _doc_file: str | None = field(default=None, repr=False)
+
     def to_dict(self, include_diff: bool = False) -> dict[str, Any]:
-        """Convert to dictionary for JSON output."""
-        result: dict[str, Any] = {
-            "code_file": self.code_file,
-            "doc_target": self.doc_target,
-            "reason": self.reason,
+        """Convert to dictionary for JSON output.
+
+        Issue #34: Enhanced JSON format with structured doc_target,
+        line_range, timestamps, auto_generated flag, and suggested_action.
+        """
+        # Build structured doc_target (issue #34)
+        doc_target_obj: dict[str, Any] = {
+            "file": self._doc_file or self.doc_target.split("#")[0],
             "section": self.section,
+            "line_range": list(self.line_range) if self.line_range else None,
         }
 
-        # Add enriched fields if available
-        if self.last_code_change:
-            result["last_code_change"] = self.last_code_change
+        result: dict[str, Any] = {
+            "code_file": self.code_file,
+            "doc_target": doc_target_obj,
+            "reason": self.reason,
+            # Issue #34: Renamed fields for clarity
+            "code_last_modified": self.last_code_change,
+            "doc_last_modified": self.last_doc_update,
+            # Issue #34: New fields
+            "severity": self.severity,  # None until #29 is implemented
+            "auto_generated": self.auto_generated,
+            "suggested_action": self.suggested_action,
+        }
+
+        # Add optional enriched fields
         if self.last_code_commit:
             result["last_code_commit"] = self.last_code_commit
-        if self.last_doc_update:
-            result["last_doc_update"] = self.last_doc_update
         if self.commits_since:
             result["commits_since"] = [c.to_dict() for c in self.commits_since]
         if self.symbols_added:
@@ -473,9 +495,10 @@ def check_staleness_enriched(
     include_diff: bool = False,
     max_diff_lines: int = 30,
     max_commits: int = 5,
+    auto_generated: bool = False,
 ) -> StalenessResult:
     """
-    Check staleness with enriched information (issues #28, #31, #33).
+    Check staleness with enriched information (issues #28, #31, #33, #34).
 
     Returns a StalenessResult with:
     - Basic staleness info (is_stale, reason)
@@ -484,6 +507,9 @@ def check_staleness_enriched(
     - Commits since doc was last updated
     - Symbol changes (functions/classes added/removed)
     - Code diff (if include_diff=True)
+    - Line range for section-specific targets (issue #34)
+    - auto_generated flag (issue #34)
+    - suggested_action (issue #34)
     """
     # Find the most recent code commit (shared with is_doc_stale logic)
     most_recent_code_commit, most_recent_code_file = _find_most_recent_commit(
@@ -493,12 +519,31 @@ def check_staleness_enriched(
     # Get basic staleness result
     is_stale, reason = is_doc_stale(repo_root, code_file, doc_target, transitive_files)
 
+    # Get line range for section-specific targets (issue #34)
+    line_range: tuple[int, int] | None = None
+    if doc_target.section:
+        doc_path = repo_root / doc_target.file
+        line_range = parse_markdown_section(doc_path, doc_target.section)
+
+    # Determine suggested action (issue #34)
+    # Note: Only "update" and "create" are meaningful since this function
+    # is only called for stale results (fresh docs are filtered out by CLI)
+    suggested_action = "update"
+    if not (repo_root / doc_target.file).exists():
+        suggested_action = "create"
+    elif doc_target.section and line_range is None:
+        suggested_action = "create"  # Section doesn't exist
+
     result = StalenessResult(
         is_stale=is_stale,
         reason=reason,
         code_file=code_file,
         doc_target=str(doc_target),
         section=doc_target.section,
+        line_range=line_range,
+        auto_generated=auto_generated,
+        suggested_action=suggested_action,
+        _doc_file=doc_target.file,
     )
 
     if not most_recent_code_commit:

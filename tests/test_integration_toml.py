@@ -95,8 +95,10 @@ Other docs.
 
         # Should detect stale Authentication section
         assert len(output["stale"]) == 1
-        assert output["stale"][0]["doc_target"] == "docs/api.md#Authentication"
-        assert output["stale"][0]["section"] == "Authentication"
+        # Issue #34: doc_target is now a structured object
+        assert output["stale"][0]["doc_target"]["file"] == "docs/api.md"
+        assert output["stale"][0]["doc_target"]["section"] == "Authentication"
+        assert output["stale"][0]["doc_target"]["line_range"] is not None
 
         # Update the Authentication section
         (repo_root / "docs" / "api.md").write_text(
@@ -156,3 +158,78 @@ docs = ["docs/api.md#MissingSection"]
         assert result.returncode == 1  # Should fail validation
         assert "MissingSection" in result.stdout
         assert "not found" in result.stdout
+
+
+def test_list_stale_paths_format():
+    """Test that --format paths outputs unique doc file paths."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        repo_root = Path(tmpdir)
+
+        # Initialize git
+        subprocess.run(["git", "init"], cwd=repo_root, capture_output=True)
+        subprocess.run(
+            ["git", "config", "user.email", "test@test.com"],
+            cwd=repo_root,
+            capture_output=True,
+        )
+        subprocess.run(["git", "config", "user.name", "Test"], cwd=repo_root, capture_output=True)
+
+        # Create structure with multiple links to same doc file
+        (repo_root / ".docsync").mkdir()
+        (repo_root / ".docsync" / "links.toml").write_text(
+            """
+[[link]]
+code = "src/auth.py"
+docs = ["docs/api.md#Authentication"]
+
+[[link]]
+code = "src/models.py"
+docs = ["docs/api.md#Models", "docs/other.md"]
+"""
+        )
+
+        (repo_root / "pyproject.toml").write_text('[tool.docsync]\nmode = "warn"')
+
+        (repo_root / "src").mkdir()
+        (repo_root / "src" / "auth.py").write_text("def login(): pass")
+        (repo_root / "src" / "models.py").write_text("class User: pass")
+
+        (repo_root / "docs").mkdir()
+        (repo_root / "docs" / "api.md").write_text(
+            """## Authentication
+
+Login functionality.
+
+## Models
+
+Model docs.
+"""
+        )
+        (repo_root / "docs" / "other.md").write_text("## Other\n\nDocs.\n")
+
+        _git_commit(repo_root, "Initial commit")
+
+        # Modify code to make docs stale
+        (repo_root / "src" / "auth.py").write_text("def login():\n    return True")
+        (repo_root / "src" / "models.py").write_text("class User:\n    name: str")
+        _git_commit(repo_root, "Update code")
+
+        # Test --format paths
+        result = subprocess.run(
+            ["docsync", "list-stale", "--format", "paths"],
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+        )
+
+        assert result.returncode == 0
+        paths = result.stdout.strip().split("\n")
+
+        # Should output unique doc paths (no duplicates, no section anchors)
+        assert "docs/api.md" in paths
+        assert "docs/other.md" in paths
+        # Should NOT include section anchors
+        assert "docs/api.md#Authentication" not in paths
+        assert "docs/api.md#Models" not in paths
+        # Should be deduplicated (api.md appears once even though two sections are stale)
+        assert paths.count("docs/api.md") == 1

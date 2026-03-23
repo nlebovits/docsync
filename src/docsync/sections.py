@@ -76,6 +76,8 @@ def list_sections(file_path: Path) -> list[str]:
     """
     List all top-level and second-level section headings in a markdown file.
     Returns heading text (without # markers or anchor IDs).
+
+    Note: Lines starting with # inside code fences (```) are NOT treated as headings.
     """
     try:
         with open(file_path, encoding="utf-8") as f:
@@ -84,9 +86,22 @@ def list_sections(file_path: Path) -> list[str]:
         return []
 
     sections = []
+    in_code_fence = False
+
     for line in lines:
-        if line.strip().startswith("#"):
-            match = re.match(r"^(#+)\s+(.+)$", line.strip())
+        stripped = line.strip()
+
+        # Track code fence state
+        if stripped.startswith("```"):
+            in_code_fence = not in_code_fence
+            continue
+
+        # Skip heading detection inside code fences
+        if in_code_fence:
+            continue
+
+        if stripped.startswith("#"):
+            match = re.match(r"^(#+)\s+(.+)$", stripped)
             if match:
                 level = len(match.group(1))
                 text = match.group(2).strip()
