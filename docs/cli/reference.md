@@ -444,7 +444,7 @@ Protected sections:
   CLAUDE.md#Terminology
 
 Global literals:
-  "Python 3.11+"
+  "Python 3.10+"
   "#7730E1"
 ```
 
@@ -457,7 +457,7 @@ Global literals:
     "docs/contributing.md#Code of Conduct"
   ],
   "protected_literals": [
-    "Python 3.11+",
+    "Python 3.10+",
     "#7730E1"
   ]
 }
