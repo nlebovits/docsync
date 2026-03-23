@@ -10,7 +10,7 @@ When working fast with tools like Claude, docs drift quickly. Agents excel at ch
 
 ### 1. Track Doc Drift
 
-Define code → doc relationships in `.menard/links.toml`. `menard` then uses git diffs to detect when docs need updates. It works at the section level so that changes affecting only one part of a docs page don't trigger full rewrites of the doc.
+Define code → doc relationships in `.menard/links.toml`. menard uses git diffs to detect stale docs. Section-level tracking means changes to one part of a file won't trigger full doc rewrites.
 
 ```bash
 git commit -m "refactor auth"

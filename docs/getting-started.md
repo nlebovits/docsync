@@ -3,7 +3,7 @@
 ## Installation
 
 ```bash
-pip install menard  # or: uv add menard
+uv add menard
 ```
 
 ## Quick Start

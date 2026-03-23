@@ -21,7 +21,7 @@ When working fast with tools like Claude, docs drift quickly. Agents excel at ch
 
 ### 1. Track Doc Drift
 
-Define code → doc relationships in `.menard/links.toml`. menard uses git diffs to detect when docs need updates—at the section level, so changes affecting only one part of a docs page don't trigger full rewrites.
+Define code → doc relationships in `.menard/links.toml`. menard uses git diffs to detect stale docs. Section-level tracking means changes to one part of a file won't trigger full doc rewrites.
 
 ```bash
 git commit -m "refactor auth"
@@ -51,7 +51,7 @@ Use the [audit skill](https://nlebovits.github.io/menard/skills/) to analyze how
 
 ```bash
 # Install
-pip install menard  # or: uv add menard
+uv add menard
 
 # Initialize
 menard init
