@@ -15,15 +15,37 @@
 
 When working fast with tools like Claude, docs drift quickly. Agents excel at changing code but struggle to understand how code changes should trigger doc updates. menard addresses this with deterministic checks.
 
+**📚 [Full docs](https://nlebovits.github.io/menard/)** | **[Getting Started](https://nlebovits.github.io/menard/getting-started/)** | **[CLI Reference](https://nlebovits.github.io/menard/cli/reference/)**
+
 ## Three Core Use Cases
 
-**1. Track Doc Sync** - Block commits when linked documentation becomes stale. Define code→doc relationships, menard uses git diff to detect when docs need updates.
+### 1. Track Doc Drift
 
-**2. Flag Protected Content Changes** - Prevent accidental changes to licenses, brand assets, and policies. Protected sections are never marked stale, protected literals trigger warnings.
+Define code → doc relationships in `.menard/links.toml`. menard uses git diffs to detect when docs need updates—at the section level, so changes affecting only one part of a docs page don't trigger full rewrites.
 
-**3. Audit for Deterministic Maintainability** - Score documentation structure for trackability using the audit skill in Claude Code. Get concrete suggestions for improvements.
+```bash
+git commit -m "refactor auth"
+# ❌ Blocked: docs/api.md#Authentication unchanged since src/auth.py changed
+```
 
-**📚 [Full docs](https://nlebovits.github.io/menard/)** | **[Getting Started](https://nlebovits.github.io/menard/getting-started/)** | **[CLI Reference](https://nlebovits.github.io/menard/cli/reference/)**
+### 2. Flag Protected Content Changes
+
+Use `.menard/donttouch` to define sections that shouldn't be edited. Avoid accidental changes by over-eager agents with automatic warnings.
+
+```bash
+git commit -m "update requirements"
+# ⚠️  Warning: Protected literal changed
+#   "Python 3.10+" → "Python 3.9+"
+#   This is protected in .menard/donttouch
+```
+
+### 3. Audit for Deterministic Maintainability
+
+Use the [audit skill](https://nlebovits.github.io/menard/skills/) to analyze how easily your docs can be maintained with deterministic checks. Get concrete suggestions for `links.toml` additions, `donttouch` protections, and restructuring.
+
+```
+> Audit my documentation
+```
 
 ## Quick Start
 

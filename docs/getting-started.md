@@ -1,5 +1,7 @@
 # Getting Started
 
+menard deterministically flags when code changes should trigger documentation updates. Define code → doc relationships, and menard uses git diffs to detect when docs need review—at the section level, so changes affecting only one part of a page don't trigger full rewrites.
+
 ## Installation
 
 ```bash
@@ -22,6 +24,10 @@ menard bootstrap --apply
 menard validate-links
 menard coverage
 ```
+
+## Agent-First Design
+
+All menard output is designed for AI consumption. Use `--format json` for structured metadata with exact line ranges for precision edits. The `suggested_action` field tells agents whether to "update" (section exists) or "create" (doc/section missing).
 
 ## Pre-Commit Setup
 
