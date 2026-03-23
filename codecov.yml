@@ -1,0 +1,18 @@
+# Codecov configuration
+# https://docs.codecov.com/docs/codecov-yaml
+
+coverage:
+  status:
+    project:
+      default:
+        target: 65%
+        threshold: 0%
+    patch:
+      default:
+        target: 55%
+        threshold: 10%
+
+comment:
+  layout: "header, diff, flags, files"
+  behavior: default
+  require_changes: true
