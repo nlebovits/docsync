@@ -1,8 +1,8 @@
 <p align="center">
-  <img src=".github/branding/profile.png" alt="docsync logo" width="200">
+  <img src=".github/branding/profile.png" alt="menard logo" width="200">
 </p>
 
-docsync is a pre-commit hook and CLI tool that deterministically flags when code changes should trigger documentation updates. It outputs agent-friendly JSON with targeted information about what changed and which doc sections need review.
+**menard** is a pre-commit hook and CLI tool that deterministically flags when code changes should trigger documentation updates. It outputs agent-friendly JSON with targeted information about what changed and which doc sections need review.
 
 When working fast with tools like Claude, docs drift quickly. Agents excel at changing code but struggle to understand how code changes should trigger doc updates. docsync addresses this with deterministic checks.
 
@@ -36,7 +36,7 @@ docsync validate-links
 docsync coverage
 
 # Set up pre-commit hook
-# See: https://nlebovits.github.io/docsync/getting-started/#pre-commit-setup
+# See: https://nlebovits.github.io/menard/getting-started/#pre-commit-setup
 pre-commit install
 ```
 

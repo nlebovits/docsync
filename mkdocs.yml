@@ -6,20 +6,20 @@ repo_name: nlebovits/menard
 
 theme:
   name: material
-  logo: img/logo-white.svg
-  favicon: img/favicon.png
+  logo: assets/logo-white.svg
+  favicon: assets/menard-logo/profile.png
   palette:
     # Light mode
     - scheme: default
-      primary: deep purple  # #7730E1 brand color
-      accent: lime          # #DBDF24 brand accent
+      primary: deep purple  # #3F1CA2 brand color
+      accent: pink          # #DF98E2 brand accent
       toggle:
         icon: material/brightness-7
         name: Switch to dark mode
     # Dark mode
     - scheme: slate
       primary: deep purple
-      accent: lime
+      accent: pink
       toggle:
         icon: material/brightness-4
         name: Switch to light mode
