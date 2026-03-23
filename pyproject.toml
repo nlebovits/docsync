@@ -93,3 +93,10 @@ enforce_symmetry = true
 require_links = ["src/docsync/**/*.py"]
 exempt = []
 doc_paths = ["docs/**/*.md", "README.md", "mkdocs.yml", "CLAUDE.md"]
+
+[tool.commitizen]
+name = "cz_conventional_commits"
+version = "0.2.0"
+version_files = ["pyproject.toml:^version"]
+tag_format = "v$version"
+update_changelog_on_bump = true
