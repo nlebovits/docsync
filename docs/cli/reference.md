@@ -711,6 +711,86 @@ Later, if `cli.py` changes again (a real feature), it will be flagged stale agai
 
 ---
 
+## Discovery Commands
+
+### brevity
+
+Find semantically similar documentation sections using local embeddings.
+
+> *"Brevity is the soul of wit."* — Polonius, Hamlet
+
+```bash
+menard brevity [--threshold N] [--format text|json] [--model NAME] [--no-cache]
+```
+
+**Purpose:** Discover potential duplicate content across documentation. This is a **discovery tool, not an enforcer**—it surfaces potential duplicates for human review without blocking commits.
+
+**Options:**
+
+| Option | Description |
+|--------|-------------|
+| `--threshold` | Minimum similarity score to report (default: 0.8) |
+| `--format` | Output format: `text` or `json` (default: `text`) |
+| `--model` | Embedding model name (default: `BAAI/bge-small-en-v1.5`) |
+| `--no-cache` | Skip cache and re-embed all sections |
+
+**Installation:** Requires the `[brevity]` optional dependency:
+
+```bash
+uv add menard[brevity]
+# or
+pip install fastembed
+```
+
+**Example output (text):**
+
+```bash
+$ menard brevity --threshold 0.85
+
+Potential duplicates found (threshold: 0.85):
+
+  README.md#Quick Start ↔ docs/getting-started.md#Installation
+  Similarity: 0.92
+
+  docs/cli/reference.md#check ↔ docs/index.md#Track Doc Drift
+  Similarity: 0.87
+```
+
+**Example output (json):**
+
+```json
+{
+  "duplicates": [
+    {
+      "source": "README.md#Quick Start",
+      "target": "docs/getting-started.md#Installation",
+      "similarity": 0.92,
+      "source_lines": [15, 30],
+      "target_lines": [1, 20]
+    }
+  ],
+  "threshold": 0.85,
+  "model": "BAAI/bge-small-en-v1.5",
+  "sections_analyzed": 24
+}
+```
+
+**How it works:**
+
+1. **Chunk by heading** — Uses `sections.py` to extract markdown sections
+2. **Embed with fastembed** — Generates embeddings locally (no API keys needed)
+3. **Cache embeddings** — Stores in `.menard/` using content-hash invalidation
+4. **Pairwise similarity** — Compares all section pairs, flags those above threshold
+
+**Exit codes:**
+
+- `0` - No duplicates found
+- `1` - Duplicates found (advisory)
+
+**When to use:** Periodic audits, after major doc restructuring, finding content drift.
+
+---
+
 ## Utility Commands
 
 ### clear-cache

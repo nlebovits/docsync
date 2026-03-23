@@ -1380,6 +1380,82 @@ def cmd_clean_reviewed(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_brevity(args: argparse.Namespace) -> int:
+    """Find semantically similar documentation sections."""
+    try:
+        from menard.brevity import (
+            embed_sections,
+            find_duplicates,
+            load_embeddings_cache,
+            save_embeddings_cache,
+        )
+    except ImportError:
+        print("❌ fastembed not installed")
+        print("  Install with: uv add menard[brevity]")
+        print("  Or: pip install fastembed")
+        return 1
+
+    repo_root = Path.cwd()
+    config = load_config(repo_root)
+    doc_paths = ["**/*.md"] if config is None else config.doc_paths or ["**/*.md"]
+    model_name = args.model or "BAAI/bge-small-en-v1.5"
+    threshold = args.threshold
+    use_cache = not args.no_cache
+
+    # Try to load from cache
+    embeddings = None
+    if use_cache:
+        embeddings = load_embeddings_cache(repo_root, model_name, doc_paths)
+
+    # Embed if cache miss
+    if embeddings is None:
+        try:
+            embeddings = embed_sections(repo_root, doc_paths, model_name)
+        except ImportError:
+            print("❌ fastembed not installed")
+            print("  Install with: uv add menard[brevity]")
+            print("  Or: pip install fastembed")
+            return 1
+
+        # Save to cache
+        if use_cache and embeddings:
+            save_embeddings_cache(repo_root, embeddings, model_name, doc_paths)
+
+    # Find duplicates
+    duplicates = find_duplicates(embeddings, threshold)
+
+    # Output
+    if args.format == "json":
+        result = {
+            "duplicates": [
+                {
+                    "source": d.source,
+                    "target": d.target,
+                    "similarity": round(d.similarity, 4),
+                    "source_lines": list(d.source_lines),
+                    "target_lines": list(d.target_lines),
+                }
+                for d in duplicates
+            ],
+            "threshold": threshold,
+            "model": model_name,
+            "sections_analyzed": len(embeddings),
+        }
+        print(json.dumps(result, indent=2))
+    else:
+        if duplicates:
+            print(f"Potential duplicates found (threshold: {threshold}):\n")
+            for d in duplicates:
+                print(f"  {d.source} ↔ {d.target}")
+                print(f"  Similarity: {d.similarity:.2f}\n")
+        else:
+            print(f"No duplicates found above threshold {threshold}")
+            print(f"  Analyzed {len(embeddings)} sections")
+
+    # Return 1 if duplicates found (advisory, not blocking)
+    return 1 if duplicates else 0
+
+
 def _open_editor_at_line(file_path: Path, line: int) -> bool:
     """Open $EDITOR at the specified line. Returns True if successful."""
     import os
@@ -1774,6 +1850,34 @@ def main() -> int:
         "--format", choices=["text", "json"], default="text", help="Output format"
     )
 
+    # brevity - "Brevity is the soul of wit" - find semantic duplicates
+    brevity_parser = subparsers.add_parser(
+        "brevity",
+        help="Find semantically similar documentation sections",
+        description="Discover potential duplicate content across documentation using embeddings. "
+        "This is a discovery tool, not an enforcer - it surfaces potential duplicates for review. "
+        '"Brevity is the soul of wit." - Polonius, Hamlet',
+    )
+    brevity_parser.add_argument(
+        "--threshold",
+        type=float,
+        default=0.8,
+        help="Minimum similarity score to report (default: 0.8)",
+    )
+    brevity_parser.add_argument(
+        "--format", choices=["text", "json"], default="text", help="Output format"
+    )
+    brevity_parser.add_argument(
+        "--model",
+        default=None,
+        help="Embedding model name (default: BAAI/bge-small-en-v1.5)",
+    )
+    brevity_parser.add_argument(
+        "--no-cache",
+        action="store_true",
+        help="Skip cache and re-embed all sections",
+    )
+
     args = parser.parse_args()
 
     if not args.command:
@@ -1798,6 +1902,7 @@ def main() -> int:
         "fix-mark-reviewed": cmd_fix_mark_reviewed,
         "fix-ignore": cmd_fix_ignore,
         "clean-reviewed": cmd_clean_reviewed,
+        "brevity": cmd_brevity,
     }
 
     return commands[args.command](args)
