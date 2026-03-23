@@ -4,11 +4,11 @@
 
 **menard** is a pre-commit hook and CLI tool that deterministically flags when code changes should trigger documentation updates. It outputs agent-friendly JSON with targeted information about what changed and which doc sections need review.
 
-When working fast with tools like Claude, docs drift quickly. Agents excel at changing code but struggle to understand how code changes should trigger doc updates. docsync addresses this with deterministic checks.
+When working fast with tools like Claude, docs drift quickly. Agents excel at changing code but struggle to understand how code changes should trigger doc updates. menard addresses this with deterministic checks.
 
 ## Three Core Use Cases
 
-**1. Track Doc Sync** - Block commits when linked documentation becomes stale. Define code→doc relationships, docsync uses git diff to detect when docs need updates.
+**1. Track Doc Sync** - Block commits when linked documentation becomes stale. Define code→doc relationships, menard uses git diff to detect when docs need updates.
 
 **2. Flag Protected Content Changes** - Prevent accidental changes to licenses, brand assets, and policies. Protected sections are never marked stale, protected literals trigger warnings.
 
@@ -23,17 +23,17 @@ When working fast with tools like Claude, docs drift quickly. Agents excel at ch
 pip install menard  # or: uv add menard
 
 # Initialize
-docsync init
+menard init
 
 # Audit docs for trackability (in Claude Code)
 > Audit my documentation and apply the suggestions
 
 # Auto-generate convention-based links
-docsync bootstrap --apply
+menard bootstrap --apply
 
 # Validate and check coverage
-docsync validate-links
-docsync coverage
+menard validate-links
+menard coverage
 
 # Set up pre-commit hook
 # See: https://nlebovits.github.io/menard/getting-started/#pre-commit-setup
