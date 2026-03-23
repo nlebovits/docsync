@@ -19,7 +19,7 @@ git commit -m "refactor auth"
 
 ### 2. Flag Protected Content Changes
 
-Use the `.donttouch` file to define which sections of your codebase should not by edited. Avoid accidental changes by over-eager agents by automatically triggering warnings when these sections are committed.
+Use `.menard/donttouch` to define which sections of your codebase should not be edited. Avoid accidental changes by over-eager agents by automatically triggering warnings when these sections are committed.
 
 ```bash
 git commit -m "update requirements"
@@ -30,7 +30,7 @@ git commit -m "update requirements"
 
 ### 3. Audit for Deterministic Maintainability
 
-Use the [audit skill](skills.md) to analyze how easily your codebase and docs can be maintained with determistic checks. The audit analyzes structure (tables, code blocks, headings), file references, section scope, and protected content. It provides concrete suggestions for `links.toml` additions, `donttouch` protections, and restructuring.
+Use the [audit skill](skills.md) to analyze how easily your codebase and docs can be maintained with deterministic checks. The audit analyzes structure (tables, code blocks, headings), file references, section scope, and protected content. It provides concrete suggestions for `links.toml` additions, `donttouch` protections, and restructuring.
 
 ```
 > Audit my documentation
