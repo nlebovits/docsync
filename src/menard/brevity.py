@@ -162,8 +162,9 @@ def _get_docs_hash(repo_root: Path, doc_paths: list[str]) -> str:
 
 def _get_cache_path(repo_root: Path, model_name: str) -> tuple[Path, Path]:
     """Get cache file and state file paths for a model."""
-    cache_dir = repo_root / ".menard"
-    cache_dir.mkdir(exist_ok=True)
+    from menard.cache import ensure_menard_dir
+
+    cache_dir = ensure_menard_dir(repo_root)
 
     # Hash model name for safe filename
     model_hash = hashlib.sha256(model_name.encode()).hexdigest()[:8]

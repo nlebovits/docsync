@@ -241,10 +241,11 @@ doc_paths = ["docs/**/*.md", "README.md"]
     if detected_patterns != ["src/**/*.py"]:
         print(f"✓ Detected source directories: {detected_patterns}")
 
-    # Create .menard directory
-    menard_dir = repo_root / ".menard"
-    menard_dir.mkdir(exist_ok=True)
-    print(f"✓ Created {menard_dir}/")
+    # Create .menard directory with automatic gitignore for cache files
+    from menard.cache import ensure_menard_dir
+
+    menard_dir = ensure_menard_dir(repo_root)
+    print(f"✓ Created {menard_dir}/ (cache files auto-gitignored)")
 
     # Create empty links.toml with helpful comments
     links_file = menard_dir / "links.toml"

@@ -2,7 +2,12 @@
 
 from pathlib import Path
 
-from menard.cache import clear_cache, load_import_graph_cache, save_import_graph_cache
+from menard.cache import (
+    clear_cache,
+    ensure_menard_dir,
+    load_import_graph_cache,
+    save_import_graph_cache,
+)
 
 
 def test_save_and_load_cache(tmp_path: Path, monkeypatch):
@@ -70,3 +75,52 @@ def test_load_cache_returns_none_when_missing(tmp_path: Path, monkeypatch):
 
     loaded = load_import_graph_cache(tmp_path)
     assert loaded is None
+
+
+def test_ensure_menard_dir_creates_gitignore(tmp_path: Path):
+    """Test that ensure_menard_dir creates a .gitignore file for cache files."""
+    menard_dir = ensure_menard_dir(tmp_path)
+
+    assert menard_dir.exists()
+    assert menard_dir.is_dir()
+
+    gitignore = menard_dir / ".gitignore"
+    assert gitignore.exists()
+
+    content = gitignore.read_text()
+    assert "*.json" in content
+    assert "*.state" in content
+    assert "cache/" in content
+
+
+def test_ensure_menard_dir_does_not_overwrite_existing_gitignore(tmp_path: Path):
+    """Test that existing .gitignore is preserved."""
+    menard_dir = tmp_path / ".menard"
+    menard_dir.mkdir()
+
+    gitignore = menard_dir / ".gitignore"
+    custom_content = "# Custom gitignore\nmy_custom_pattern/"
+    gitignore.write_text(custom_content)
+
+    # Call ensure_menard_dir
+    ensure_menard_dir(tmp_path)
+
+    # Content should be unchanged
+    assert gitignore.read_text() == custom_content
+
+
+def test_save_cache_creates_gitignore(tmp_path: Path, monkeypatch):
+    """Test that saving cache also creates the .gitignore file."""
+    monkeypatch.chdir(tmp_path)
+
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "a.py").write_text("import b\n")
+
+    graph = {"src/a.py": {"src/b.py"}}
+    save_import_graph_cache(tmp_path, graph)
+
+    # Gitignore should exist
+    gitignore = tmp_path / ".menard" / ".gitignore"
+    assert gitignore.exists()
+    assert "*.json" in gitignore.read_text()
