@@ -242,6 +242,60 @@ def get_commit_date(repo_root: Path, commit: str) -> str | None:
         return None
 
 
+def get_last_commit_for_lines(
+    repo_root: Path, file_path: str, start_line: int, end_line: int
+) -> str | None:
+    """
+    Get the SHA of the last commit that modified any line in the given range.
+
+    Uses git log with -L to track line-level history.
+    Returns the most recent commit SHA that touched lines in [start_line, end_line].
+    """
+    try:
+        # git log -L start,end:file shows commits that modified those lines
+        result = subprocess.run(
+            ["git", "log", "-1", "--format=%H", f"-L{start_line},{end_line}:{file_path}"],
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=GIT_TIMEOUT,
+        )
+        commit = result.stdout.strip().split("\n")[0]  # First line is the SHA
+        return commit if commit else None
+    except subprocess.TimeoutExpired:
+        logger.warning("git log -L timed out for %s lines %d-%d", file_path, start_line, end_line)
+        return None
+    except subprocess.CalledProcessError:
+        return None
+
+
+def is_commit_ancestor(repo_root: Path, potential_ancestor: str, descendant: str) -> bool | None:
+    """
+    Check if potential_ancestor is an ancestor of descendant in the commit graph.
+
+    Returns:
+    - True if potential_ancestor is an ancestor of descendant (came before)
+    - False if not an ancestor (could be same commit, descendant of, or unrelated)
+    - None if unable to determine (error)
+    """
+    try:
+        result = subprocess.run(
+            ["git", "merge-base", "--is-ancestor", potential_ancestor, descendant],
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            timeout=GIT_TIMEOUT,
+        )
+        # Exit code 0 means it IS an ancestor, 1 means it's not
+        return result.returncode == 0
+    except subprocess.TimeoutExpired:
+        logger.warning("git merge-base timed out for %s..%s", potential_ancestor, descendant)
+        return None
+    except subprocess.CalledProcessError:
+        return None
+
+
 def get_commits_since(
     repo_root: Path, file_path: str, since_commit: str, max_commits: int = 5
 ) -> list[CommitInfo]:
@@ -452,10 +506,29 @@ def is_doc_stale(
             if section_updated_in_stage:
                 return False, "Section being updated in this commit (staged)"
 
-        # Check 2: Get lines that changed in doc since code changed (committed history)
-        changed_lines = get_changed_lines(repo_root, doc_target.file, most_recent_code_commit)
+        # Check 2: Use commit order to determine staleness (issue #61)
+        # Get the last commit that actually modified lines in this section
+        section_commit = get_last_commit_for_lines(repo_root, doc_target.file, start_line, end_line)
 
-        # Check if any changed lines fall within the section
+        if section_commit:
+            # Check commit order: is code_commit an ancestor of section_commit?
+            # If yes, section was updated AFTER (or at same time as) code changed -> not stale
+            # Note: git considers a commit its own ancestor, so same-commit = True here
+            code_is_ancestor = is_commit_ancestor(
+                repo_root, most_recent_code_commit, section_commit
+            )
+            if code_is_ancestor is True:
+                # Same commit or section commit came after code commit
+                if section_commit == most_recent_code_commit:
+                    return False, f"Section updated in same commit as {most_recent_code_file}"
+                return False, f"Section updated after {most_recent_code_file} changed"
+            elif code_is_ancestor is False:
+                # Code commit came after section update
+                return True, f"Section unchanged since {most_recent_code_file} changed"
+            # code_is_ancestor is None (error), fall through to line-based check
+
+        # Fallback: Use line-based diff check (original behavior)
+        changed_lines = get_changed_lines(repo_root, doc_target.file, most_recent_code_commit)
         section_updated = any(start_line <= line <= end_line for line in changed_lines)
 
         if section_updated:
