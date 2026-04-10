@@ -1,176 +1,103 @@
 # Agent Skills
 
-menard ships Claude Code skills for intelligent documentation management. Skills are automatically available when you install menard.
+menard ships Claude Code skills for documentation management.
 
-## Discovering Skills
-
-```bash
-menard skills              # List all available skills
-menard skills --format json  # JSON output
-```
-
-Skills can be **bundled** (shipped with menard) or **local** (in your project's `.claude/skills/` directory). Local skills with the same name override bundled ones.
-
-## Customizing Bundled Skills
-
-To customize a bundled skill:
+## List Skills
 
 ```bash
-menard skills --copy audit   # Copy to .claude/skills/audit.md
-# Edit the local copy as needed
+menard skills              # List all
+menard skills --copy audit # Copy to .claude/skills/ for customization
 ```
 
-Use `--force` to overwrite an existing local skill.
+Skills are **bundled** (shipped with menard) or **local** (in `.claude/skills/`). Local overrides bundled.
 
 ---
 
-## Audit Skill
+## Audit
 
-The audit skill analyzes documentation for trackability, detects cross-document disagreements, and suggests improvements. It scores each doc file and section on **deterministic verifiability** — how well menard can track and verify the content.
-
-**Source:** Bundled with menard (customizable via `menard skills --copy audit`).
+Score docs on **deterministic verifiability**—how well menard can track them.
 
 ### Phases
 
-The audit runs in three phases. By default, all phases run sequentially.
-
-| Phase | Flag | Description |
-|-------|------|-------------|
-| detect | `--phase=detect` | Find issues: coverage gaps, disagreements, orphaned docs |
+| Phase | Flag | Does |
+|-------|------|------|
+| detect | `--phase=detect` | Find coverage gaps, disagreements, orphans |
 | suggest | `--phase=suggest` | Generate fix recommendations |
 | fix | `--phase=fix` | Apply deterministic patterns |
 
 ```bash
-menard audit                    # Run all phases (default)
+menard audit                    # All phases
 menard audit --phase=detect     # Stop after detection
-menard audit --phase=suggest    # Stop after suggestions
+menard audit --dry-run          # Preview scope
 ```
 
-Each phase outputs usable results if stopped early.
+### Scoring
 
-### Dry Run
+| Score | Meaning |
+|-------|---------|
+| 9-10 | Tables, code blocks, single-file scope, in links.toml |
+| 7-8 | File references present, could use more links |
+| 5-6 | Mix of structure and prose, missing links.toml entries |
+| 3-4 | Long prose, vague references |
+| 1-2 | Pure narrative, untrackable |
 
-Preview scope and estimated effort before running:
+### Cross-Document Disagreements
 
-```bash
-menard audit --dry-run
-```
+The audit detects conflicting claims:
 
-Output:
-```
-Menard audit scope:
-  Files: README.md, CLAUDE.md, docs/*.md (14 files)
-  Links: .menard/links.toml (23 relationships)
+| Pattern | Example |
+|---------|---------|
+| Version conflicts | README: 3.10+, CLAUDE.md: 3.11+ |
+| Command conflicts | `--output` vs `--fix-output` |
+| Install conflicts | `pip install` vs `uv add` |
 
-  Phases: detect -> suggest -> fix
-  Estimated: ~18k tokens
-
-  Run without --dry-run to proceed.
-```
-
-### Cross-Document Disagreement Detection
-
-The audit detects conflicting claims across documentation files:
-
-| Pattern | Example | Impact |
-|---------|---------|--------|
-| Version conflicts | README says 3.10+, CLAUDE.md says 3.11+ | Wrong version installed |
-| Command conflicts | One doc shows `--output`, another shows `--fix-output` | Commands fail |
-| Install conflicts | README says `pip`, CLAUDE.md says `uv` | Inconsistent onboarding |
-| Default conflicts | "Default is 10" vs "Default is 100" | Unexpected behavior |
-
-**Two-audience awareness:** The audit distinguishes between user-facing docs (README, docs/) and AI-facing docs (CLAUDE.md, context/, skills/). Cross-audience disagreements are particularly high-impact.
-
-### Scoring Rubric
-
-Each doc section receives a score (1-10):
-
-| Score | Meaning | Characteristics |
-|-------|---------|-----------------|
-| 9-10  | **Highly trackable** | Tables, code blocks, single-file scope, in `links.toml` |
-| 7-8   | **Trackable** | File references present, some structure, could use more links |
-| 5-6   | **Partially trackable** | Mix of structure and prose, missing `links.toml` entries |
-| 3-4   | **Poorly trackable** | Long prose, vague references, no links |
-| 1-2   | **Untrackable** | Pure narrative, no code references, impossible to verify |
-
-### Example Output
+### Output
 
 ```
 # docs/api.md
-  Overall: 6/10 (partially trackable)
+  Overall: 6/10
 
   ## Authentication (8/10)
-    + Contains code examples
-    + References src/auth.py
-    ! src/auth.py not in links.toml - SUGGEST ADD
+    ✓ Contains code examples
+    ⚠ src/auth.py not in links.toml — SUGGEST ADD
 
   ## Data Pipeline (3/10)
-    x 400 words of prose, no tables or code blocks
-    x References 7 code files, none in links.toml
-    x No clear single-file scope - consider splitting
+    ✗ 400 words prose, no code blocks
+    ✗ References 7 files, none linked
 
 # Cross-Document Disagreements
-  x DISAGREEMENT: Installation method
-    README.md:15 says: `pip install mypackage`
-    CLAUDE.md:8 says: `uv add mypackage`
-    -> Pick one source of truth
+  ✗ README.md:15 says `pip install`
+    CLAUDE.md:8 says `uv add`
 ```
 
 ### Usage
 
-**Invoke explicitly:**
 ```
-> Run the menard audit skill on all documentation
-```
-
-**With phase control:**
-```
+> Audit my documentation
 > Run menard audit --phase=detect only
 ```
 
-**Invoke contextually:**
-```
-> I just added docs/tutorial.md, can you check if it's trackable?
-```
-
-Claude will run the audit skill and provide specific recommendations for `links.toml` additions, `donttouch` protections, and doc restructuring.
-
 ---
 
-## Compress Skill
+## Compress
 
-The compress skill makes documentation deterministically maintainable by replacing prose with pointers, auto-generating repeated content, and enforcing rules with hooks instead of prose.
+Transform docs from **prose that drifts** to **pointers that stay current**.
 
-**Source:** Bundled with menard (customizable via `menard skills --copy compress`).
-
-### When to Use
-
-Use this skill when:
-
-- You already know your docs have issues (ran audit `--phase=detect`)
-- Docs feel bloated and you want to reduce drift surface area
-- You're seeing the same information in multiple places
-- Rules exist only in prose and keep getting violated
-
-**Target:** ~50% line reduction by replacing prose with deterministic references.
+Target: ~50% line reduction.
 
 ### Patterns
 
-#### 1. Pointer Over Prose
-
-Instead of writing instructions, point to the source of truth:
+**Pointer over prose:**
 
 ```markdown
-# Prose (drifts)
+# Drifts
 Run ruff before committing. Use `uv run ruff check --fix .`
 
-# Pointer (stays current)
+# Stays current
 **Code quality handled by pre-commit.** See `.pre-commit-config.yaml`.
 ```
 
-#### 2. Auto-Generate Repeated Content
-
-Use markers for content that appears in multiple places:
+**Auto-generate repeated content:**
 
 ```markdown
 <!-- BEGIN GENERATED: test-markers -->
@@ -180,58 +107,31 @@ Use markers for content that appears in multiple places:
 <!-- END GENERATED: test-markers -->
 ```
 
-One script generates the content; all docs stay synchronized.
-
-#### 3. Enforce With Hooks, Not Prose
+**Enforce with hooks, not prose:**
 
 ```yaml
-# Prose-only rule (ignored)
-"Never use fetch_arrow_table()"
-
-# Pre-commit hook (enforced)
+# Prose (ignored): "Never use fetch_arrow_table()"
+# Hook (enforced):
 - id: duckdb-antipatterns
   entry: bash -c 'grep -rn "\.fetch_arrow_table()" && exit 1 || exit 0'
 ```
 
-#### 4. Audit for Orphaned Docs
-
-Detect documentation referencing things that no longer exist:
-
-- Hooks mentioned but not in `.pre-commit-config.yaml`
-- Files referenced but deleted
-- Config values that changed
-
 ### Usage
 
-**Standalone:**
 ```
 > Run the compress skill on my documentation
-```
-
-**After audit:**
-```
-> Run audit --phase=detect, then compress to fix the issues
-```
-
-**Targeted:**
-```
 > Apply pointer-over-prose pattern to CLAUDE.md
 ```
 
 ---
 
-## Skill Integration
+## Integration
 
-The audit and compress skills work together:
-
-```
-audit --phase=detect    # Find problems
-audit --phase=suggest   # Get recommendations
-compress                # Apply deterministic patterns
-```
-
-Or run the full workflow:
-
-```
-audit                   # All phases: detect -> suggest -> fix
+```bash
+menard audit --phase=detect    # Find problems
+menard audit --phase=suggest   # Get recommendations
+# Then:
+menard audit --phase=fix       # Auto-apply
+# Or:
+/compress                      # Manual pattern-by-pattern
 ```

@@ -11,84 +11,71 @@
   <a href="https://github.com/astral-sh/ruff"><img src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json" alt="Ruff"></a>
 </p>
 
-**menard** is a pre-commit hook and CLI tool that deterministically flags when code changes should trigger documentation updates. It outputs agent-friendly JSON with targeted information about what changed and which doc sections need review.
+**menard** blocks commits when docs are stale. Define code→doc relationships, and menard uses git diffs to detect drift.
 
-When working fast with tools like Claude, docs drift quickly. Agents excel at changing code but struggle to understand how code changes should trigger doc updates. menard addresses this with deterministic checks.
+**[Docs](https://nlebovits.github.io/menard/)** · **[Getting Started](https://nlebovits.github.io/menard/getting-started/)** · **[CLI](https://nlebovits.github.io/menard/cli/reference/)**
 
-**📚 [Full docs](https://nlebovits.github.io/menard/)** | **[Getting Started](https://nlebovits.github.io/menard/getting-started/)** | **[CLI Reference](https://nlebovits.github.io/menard/cli/reference/)**
+## Install
 
-## Core Use Cases
+```bash
+uv add menard
+menard init
+```
 
-### 1. Track Doc Drift
+## What It Does
 
-Define code → doc relationships in `.menard/links.toml`. menard uses git diffs to detect stale docs. Section-level tracking means changes to one part of a file won't trigger full doc rewrites.
+### Track Doc Drift
+
+```toml
+# .menard/links.toml
+[[link]]
+code = "src/auth.py"
+docs = ["docs/api.md#Authentication"]
+```
 
 ```bash
 git commit -m "refactor auth"
 # ❌ Blocked: docs/api.md#Authentication unchanged since src/auth.py changed
 ```
 
-### 2. Flag Protected Content Changes
-
-Use `.menard/donttouch` to define sections that shouldn't be edited. Avoid accidental changes by over-eager agents with automatic warnings.
+### Protect Critical Content
 
 ```bash
-git commit -m "update requirements"
-# ⚠️  Warning: Protected literal changed
-#   "Python 3.10+" → "Python 3.9+"
-#   This is protected in .menard/donttouch
+# .menard/donttouch
+README.md#License
+"Python 3.10+"
 ```
 
-### 3. Audit for Deterministic Maintainability
+Changes to protected literals trigger warnings.
 
-Use the [audit skill](https://nlebovits.github.io/menard/skills/) to analyze how easily your docs can be maintained with deterministic checks. Get concrete suggestions for `links.toml` additions, `donttouch` protections, and restructuring.
+### Find Duplicates
+
+```bash
+menard brevity --threshold 0.95
+# README.md#License ↔ docs/index.md#License (1.00)
+```
+
+Local embeddings. No API keys.
+
+### Audit Trackability
 
 ```
 > Audit my documentation
 ```
 
-### 4. Find Duplicate Content
-
-Use `menard brevity` to find semantically similar sections across your docs using local embeddings. No API keys needed—runs entirely on your machine.
-
-```bash
-menard brevity --threshold 0.95
-# README.md#License ↔ docs/index.md#License (1.00)
-# README.md#Quick Start ↔ docs/getting-started.md#Quick Start (0.96)
-```
+The [audit skill](https://nlebovits.github.io/menard/skills/) scores docs on deterministic verifiability.
 
 ## Quick Start
 
 ```bash
-# Install
-uv add menard
-
-# Initialize
-menard init
-
-# Audit docs for trackability (in Claude Code)
-> Audit my documentation and apply the suggestions
-
-# Auto-generate convention-based links
-menard bootstrap --apply
-
-# Validate and check coverage
-menard validate-links
-menard coverage
-
-# Set up pre-commit hook
-# See: https://nlebovits.github.io/menard/getting-started/#pre-commit-setup
-pre-commit install
-
-# Optional: Find duplicate content with embeddings
-uv add menard[brevity]
-menard brevity --threshold 0.95
+menard init                    # Create .menard/
+menard bootstrap --apply       # Auto-generate links
+menard coverage                # Check coverage %
+pre-commit install             # Enable pre-commit hook
 ```
+
+Pre-commit setup: [docs/getting-started](https://nlebovits.github.io/menard/getting-started/#pre-commit-setup)
 
 ## License
 
-Apache-2.0
-
-## Contributing
-
-[Contributing Guide](https://nlebovits.github.io/menard/contributing/)
+Apache-2.0 · [Contributing](https://nlebovits.github.io/menard/contributing/)
